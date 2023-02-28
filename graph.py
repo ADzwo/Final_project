@@ -1,6 +1,8 @@
 import json
 import random
 from collections import namedtuple
+import pandas as pd
+from datetime import date
 src = '/root/agesia/magisterka/'
 
 PARAM_m = 50
@@ -10,6 +12,7 @@ CollinearPath = namedtuple('CollinearPath', ['genome', 'start', 'end', 'orient']
 Path = namedtuple('Path', ['vertex', 'orientation', 'used'])
 ExtensionVertex = namedtuple('ExtensionVertex', ['coverage', 'distance', 'path_nr', 'start', 'end'])
 ShortestPath = namedtuple('ShortestPath', ['vertex', 'orientation'])
+Occurence = namedtuple('Occurence', ['genome', 'position'])
 
 class Genome:
     path: list[tuple] # vertex index: int, orientation: int, used: bool
@@ -20,7 +23,7 @@ class Genome:
 
 class Vertex:
     length: int # legth of the represented sequence
-    occurences: list[tuple] # genome index, position on its path
+    occurences: list[namedtuple] # genome index, position on its path
 
     def __init__(self, length, occurences=None):
         self.length = length
@@ -29,7 +32,7 @@ class Vertex:
         else:
             self.occurences = occurences
     def add_occurence(self, genome_idx, position):
-        self.occurences.append((genome_idx, position))
+        self.occurences.append(Occurence(genome_idx, position))
 
 
 class Graph:
@@ -74,14 +77,17 @@ class Graph:
     
     def mark_vertices_as_used(self, block):
         for collinear_path in block.collinear_paths:
-            genome_path = self.genomes[collinear_path.genome].path
+            genome_id = collinear_path.genome
+            genome_path = self.genomes[genome_id].path
             for i in range(collinear_path.start, collinear_path.end+1):
-                v_idx = genome_path[i].vertex
-                self.vertices[v_idx].used = True
+                path = genome_path[i] # Path = namedtuple('Path', ['vertex', 'orientation', 'used'])
+                genome_path[i] = Path(path.vertex, path.orientation, True)
+        print(f'Marked as used: {len(block.collinear_paths)*(collinear_path.end+1-collinear_path.start)}.')
 
     def find_collinear_blocks(self):
         collinear_blocks = []
-        vertex_indices_shuffled = random.shuffle(list(range(len(self.vertices))))
+        vertex_indices_shuffled = list(range(len(self.vertices)))
+        random.shuffle(vertex_indices_shuffled)
         
         for v_idx in vertex_indices_shuffled: # select a vertex --- seed of a new CollinearBlock
             best_score = -1
@@ -106,12 +112,14 @@ class Graph:
 
             while new_block.scoring_function(self)>=0:
                 w0 = new_block.carrying_path[-1]
-                Q = BlockExtensions(new_block.collinear_paths, w0)
-                t, r = Q.most_visited_vertex() # t - index of the most frequently visited vertex; r - path from w0 to t (vertex, orientation)
+                Q = BlockExtensions(new_block.collinear_paths, self, w0) # collinear_paths, graph, w0
+                r = Q.extend_carrying_path(self) # t - index of the most frequently visited vertex; r - path from w0 to t (vertex, orientation)
+                if not r:
+                    break
                 for i in range(len(r)):
                     new_block.carrying_path.append(r[i].vertex)
                     new_block.carrying_path_orientations.append(r[i].orientation)
-                    Q.update_collinear_walks(r[i])
+                    new_block.update_collinear_walks(r[i], Q, self)
                     new_score = new_block.scoring_function(self)
                     if new_score>best_score:
                         best_block = new_block
@@ -164,9 +172,30 @@ class CollinearBlock:
                         bubble += 1
                         if bubble > PARAM_b:
                             return -1 # instead of -infty (from SibeliaZ algorithm)
+                    i += 1
                 score += chain - (q1 + bubble)**2
 
         return score
+
+    def update_collinear_walks(self, w_info, block_extensions, graph): # vertex_info - tuple(vertex index, orientation)
+        # w = graph.vertices[w_info.vertex]
+        # for occurence in w.occurences:
+        #     path_to_extend = None
+        #     for e_idx, extension in enumerate(self.extensions):
+
+                
+            # w bloku szukam ścieżek, których przedłużenia zawierają to wystąpienie w
+                # extension: CollinearPath(genome_id, start, end, collinear_path.orient)
+                # occurence: 
+            # wybieram ścieżkę, która kończy się najpóźniej
+                # jeśli znalazłam taką ścieżkę, to przedłużam ją o jej przedłużenie obcięte do w
+                # jeśli nie znalazłam, to dodaję to wystąpienie do bloku jako nową ścieżkę
+        
+        # ZAŚLEPKA
+        for i in range(len(self.collinear_paths)):
+            path = self.collinear_paths[i] # namedtuple('CollinearPath', ['genome', 'start', 'end', 'orient'])
+            self.collinear_paths[i] = CollinearPath(path.genome, path.start, block_extensions.extensions[i].end, path.orient)
+
 
                     
 class BlockExtensions:
@@ -187,7 +216,6 @@ class BlockExtensions:
             else:
                 end = min(collinear_path.end+PARAM_b, genome_path_len-1)
                 start = collinear_path.end+1
-                # self.extensions.append(CollinearPath(genome_id, start, end, collinear_path.orient))
                 for i in range(start, end):
                     if genome.path[i].used:
                         end = i
@@ -199,19 +227,20 @@ class BlockExtensions:
                         else:
                             self.vertices[v_idx] = ExtensionVertex(1, -1, -1, -1, -1)
                     else:
-                        self.vertices[v_idx].coverage += 1
-                        if self.vertices[v_idx].distance > i-start+1:
-                            if graph.is_vertex_on_path(collinear_path, w0):
-                                self.vertices[v_idx].distance = i-start+1
-                                self.vertices[v_idx].path_nr = path_nr
-                                self.vertices[v_idx].start = start
-                                self.vertices[v_idx].end = i
+                        coverage = self.vertices[v_idx].coverage + 1
+                        if self.vertices[v_idx].distance > i-start+1 and graph.is_vertex_on_path(collinear_path, w0):
+                                self.vertices[v_idx] = ExtensionVertex(coverage, i-start+1, path_nr, start, i)
+                        else:
+                            self.vertices[v_idx] = ExtensionVertex(coverage, self.vertices[v_idx].distance, self.vertices[v_idx].path_nr,
+                                                                   self.vertices[v_idx].start, self.vertices[v_idx].end)
+                # assert start<end # <---- to nie działa!
                 self.extensions.append(CollinearPath(genome_id, start, end, collinear_path.orient))
     
-    def most_visited_vertex(self, graph):
+    def extend_carrying_path(self, graph):
         '''
+        Function finds 
+         - index t of a vertex reachable from w0 via a genomic walk, visited by the most extensions.
         Function returns 
-         - index t of a vertex reachable from w0 via a genomic walk, visited by the most extensions
          - the shortest walk r from w0 to t.
         '''
         t = None
@@ -223,19 +252,30 @@ class BlockExtensions:
                 t = v_idx
         if t is None:
             print('t is None!')
-            return None, []
-        #####
+            return []
+        
         r = [] # list of consecutive vertices and their orientations
         extension = self.extensions[self.vertices[t].path_nr] # namedtuple('CollinearPath', ['genome', 'start', 'end', 'orient'])
         genome = graph.genomes[extension.genome]
         for i in range(extension.start, extension.end+1):
             genome_path_element = genome.path[i] # namedtuple('Path', ['vertex', 'orientation', 'used'])
             r.append(ShortestPath(genome_path_element.vertex, genome_path_element.orientation*extension.orient)) # <- not sure which orientation to use
-        return t, r
+        return r
 
 
-    def update_collinear_walks(vertex_info:tuple, graph): # vertex_info - tuple(vertex index, orientation)
-        # for occurence in graph.vertices(vertex_info.vertex).occurences:
-        pass
+g = Graph(src+'data/chr13_KI270842v1_alt_10_5_2.gfa')
+blocks = g.find_collinear_blocks()
 
-Graph(src+'data/chr13_KI270842v1_alt_10_5_2.gfa')
+def save_blocks(blocks:list[CollinearPath]):
+    df_all = pd.DataFrame()
+    for b_nr, block in enumerate(blocks):
+        df = pd.DataFrame.from_records(block.collinear_paths, columns=CollinearPath._fields)
+        df['block_nr'] = b_nr
+        df_all = pd.concat([df_all, df])
+    time = str(date.today()).replace('-', '_')
+    df_all.to_csv(f'block_{time}.csv')
+
+save_blocks(blocks)
+
+# Problemy:
+    # czasem end < start! :o
