@@ -1,0 +1,9 @@
+For the code to work, you need to define SRC variable as the path to the folder containing file graph.py.
+Except from graph.py, the folder should contain folders:
+ - data (with graphs in .gfa format, containing 'P' lines),
+ - blocks (can be empty),
+ - genome_name_to_idx (can be empty), 
+ - vertex_name_to_idx (can be empty).
+
+After running the code, collinear blocks for each graph from folder data can be found in folder blocks in .csv format.
+Folders genome_name_to_idx and vertex_name_to_idx then contain .json files translating the genome and vertex names (accordingly) to their indices in the graph (and hence, in the blocks).
