@@ -1,1 +1,5 @@
 data/
+*.csv
+blocks/
+genome_name_to_idx/
+vertex_name_to_idx/
