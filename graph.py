@@ -27,7 +27,7 @@ class Genome:
 
 
 class Vertex:
-    length: int # legth of the represented sequence
+    length: int # length of the represented sequence
     occurences: list[namedtuple] # Occurence: genome index, position on its path
 
     def __init__(self, length, occurences=None):
@@ -58,7 +58,7 @@ class Graph:
                     self.vertices.append(Vertex(len(v[2])))
                 elif line.startswith('P'): # or 'W'
                     g = line.strip().split('\t') # P, name, vertices' names, overlaps
-                    path = [] # list(tuple(int, int, bool)) # vertex, orientation, used
+                    path = [] # list[Path] - vertex, orientation, used
                     for v_pos, vertex in enumerate(g[2].split(',')):
                         v_name = vertex[:-1]
                         v_idx = vertex_name_to_idx[v_name]
@@ -241,17 +241,15 @@ class BlockExtensions:
 
             if collinear_path.orient==1 and collinear_path.end==genome_length-1: # if we've reached the end of the genome
                 self.extensions.append(CollinearPath(-1, -1, -1, -1)) # <- how to improve this?
+                break
             elif collinear_path.orient==-1 and collinear_path.start==0:
                 self.extensions.append(CollinearPath(-1, -1, -1, -1))
+                break
             else:
-                if collinear_path.orient==1: # distal/proximal - the end of extension, distal/proximal to the collinear path
-                    # distal = genome_length-1 
-                    proximal = collinear_path.end+1 # min(distal, collinear_path.end+1)
-                    # assert proximal<=distal
+                if collinear_path.orient==1: # proximal - the end of extension proximal to the collinear path
+                    proximal = collinear_path.end+1
                 else:
-                    # distal = 0
-                    proximal = collinear_path.start-1 # max(distal, collinear_path.start-1)
-                    # assert proximal>=distal
+                    proximal = collinear_path.start-1
                 assert 0<=proximal<genome_length, f'0<=proximal<genome_length is not true! {proximal=}, {genome_length=}'
                 p_length = 0
                 i = proximal
@@ -259,8 +257,10 @@ class BlockExtensions:
                     if i==genome_length:
                         print(f'{i=} = genome_length')
                     v_idx = genome.path[i].vertex
-                    p_length += graph.vertices[v_idx].length # the order of proximal and i doesn't matter
-                    if p_length>=PARAM_b:# this way, we get all extensions of length x+y, where x<b and y is the length of the last vertex of the extension
+                    p_length += graph.vertices[v_idx].length
+                    if p_length>=PARAM_b:
+                        # this way, we get all extensions of length x+y, 
+                        # where x<b and y is the length of the last vertex of the extension
                         break
                     w0_positions_further = [w0_pos for w0_pos in w0_positions if (i-w0_pos)*collinear_path.orient>=0]
                     if w0_positions_further:
@@ -285,7 +285,7 @@ class BlockExtensions:
                     
                     if i in {0, genome_length-1}:
                         break
-                    i += collinear_path.orient # going forward or backward on the genome
+                    i += collinear_path.orient # going forwards or backwards on the genome
                 
                 if collinear_path.orient==1:
                     self.extensions.append(CollinearPath(g_idx, proximal, i, collinear_path.orient))
@@ -316,7 +316,7 @@ class BlockExtensions:
         genome = graph.genomes[extension.genome]
         for i in range(w0_to_t.start, w0_to_t.end+1):
             g_path_pos = genome.path[i] # namedtuple('Path', ['vertex', 'orientation', 'used'])
-            r.append(ShortestPath(g_path_pos.vertex, g_path_pos.orientation*extension.orient)) # <- not sure which orientation to use
+            r.append(ShortestPath(g_path_pos.vertex, g_path_pos.orientation*extension.orient)) # <- not sure if orientation is ok
         return r
     
 def is_vertex_on_path(graph, path, w0_idx):
@@ -343,8 +343,8 @@ def mark_vertices_as_used(graph, block):
         g_idx = collinear_path.genome
         genome_path = graph.genomes[g_idx].path
         for i in range(collinear_path.start, collinear_path.end+1):
-            path = genome_path[i] # Path = namedtuple('Path', ['vertex', 'orientation', 'used'])
-            genome_path[i] = Path(path.vertex, path.orientation, True)
+            g_path_pos = genome_path[i] # Path = namedtuple('Path', ['vertex', 'orientation', 'used'])
+            genome_path[i] = Path(*(g_path_pos[:-1]), True)
     print(f'Marked as used: {len(block.collinear_paths)*(collinear_path.end+1-collinear_path.start)}.')
 
 def path_length(path, graph):
@@ -361,12 +361,6 @@ def path_start_end_check(path, genome_length):
     assert path.end<genome_length, f'end >= genome_length; {path=}, {genome_length=}'
     assert path.start>=0, f'start < 0; {path=}, {genome_length-1=}'
     assert path.start<=path.end, f'end < start; {path=}'
-            
-# def pathlist_start_end_check(pathlist, genome_length):
-#     path = pathlist[-1]
-#     assert path.end<genome_length, f'end >= genome_length; {pathlist=}, {genome_length=}'
-#     assert path.start>=0, f'start < 0; {pathlist=}, {genome_length-1=}'
-#     assert path.start<=path.end, f'end < start; {pathlist=}'
 
 def save_blocks(blocks:list[CollinearPath], graph_name):
     df_all = pd.DataFrame()
@@ -407,8 +401,3 @@ print(f'Number of blocks for consecutive options:\n{nr_blocks}')
 # start, end and orient once again
     # always: start<end
     # if orient==1, we extend end; otherwise - we extend start.
-
-# TO FIX:
-    # 1) compare seq lengths (not numbers of vertices) to b and m <--- ok
-    # 2) BlockExtensions init
-        # distance should be from w, not from proximal <--- ok
