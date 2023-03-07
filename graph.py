@@ -6,7 +6,7 @@ from collections import namedtuple
 import pandas as pd
 import numpy as np
 from datetime import date
-SRC = '/root/agesia/magisterka/'
+SRC = '' # path to the repo folder
 
 PARAM_m = 50
 PARAM_b = 200
