@@ -4,6 +4,7 @@ import json
 import random
 from collections import namedtuple
 import pandas as pd
+import numpy as np
 from datetime import date
 SRC = '/root/agesia/magisterka/'
 
@@ -72,24 +73,6 @@ class Graph:
         with open(f'{SRC}genome_name_to_idx/{graph_name}.json', 'w') as f:
             json.dump(genome_name_to_idx, f)
 
-    def is_vertex_on_path(self, path, w0_idx):
-        i = path.end
-        genome_path = self.genomes[path.genome].path
-        while i>=0:
-            if genome_path[i].vertex==w0_idx:
-                return True
-            i -= 1
-        return False
-    
-    def mark_vertices_as_used(self, block):
-        for collinear_path in block.collinear_paths:
-            g_idx = collinear_path.genome
-            genome_path = self.genomes[g_idx].path
-            for i in range(collinear_path.start, collinear_path.end+1):
-                path = genome_path[i] # Path = namedtuple('Path', ['vertex', 'orientation', 'used'])
-                genome_path[i] = Path(path.vertex, path.orientation, True)
-        print(f'Marked as used: {len(block.collinear_paths)*(collinear_path.end+1-collinear_path.start)}.')
-
     def find_collinear_blocks(self):
         collinear_blocks = []
 
@@ -140,7 +123,7 @@ class Graph:
             
             if best_score>0:
                 collinear_blocks.append(best_block)
-                self.mark_vertices_as_used(best_block)
+                mark_vertices_as_used(self, best_block)
                 
         return collinear_blocks
                 
@@ -169,9 +152,6 @@ class CollinearBlock:
                 # 1) calculate length of the hanging end at the beginning of the path
                 while i<=path.end and genome.path[i].vertex not in self.carrying_path:
                     q1 += graph.vertices[genome.path[i].vertex].length
-                    # if i==path.end:
-                    #     chain += 1
-                    #     break
                     if q1 > PARAM_b:
                         return -1
                     i += 1
@@ -251,106 +231,68 @@ class BlockExtensions:
     def __init__(self, collinear_paths, graph, w0_idx):
         self.extensions = []
         self.vertices = {}
+        
         for path_nr, collinear_path in enumerate(collinear_paths):
             g_idx = collinear_path.genome
             genome = graph.genomes[g_idx]
             genome_length = len(genome.path)
             path_start_end_check(collinear_path, genome_length)
+            w0_positions = find_vertex_on_path(graph, collinear_path, w0_idx)
+
             if collinear_path.orient==1 and collinear_path.end==genome_length-1: # if we've reached the end of the genome
                 self.extensions.append(CollinearPath(-1, -1, -1, -1)) # <- how to improve this?
             elif collinear_path.orient==-1 and collinear_path.start==0:
                 self.extensions.append(CollinearPath(-1, -1, -1, -1))
             else:
                 if collinear_path.orient==1: # distal/proximal - the end of extension, distal/proximal to the collinear path
-                    distal = genome_length-1 # min(collinear_path.end+PARAM_b, genome_length-1)
-                    proximal = collinear_path.end+1
+                    # distal = genome_length-1 
+                    proximal = collinear_path.end+1 # min(distal, collinear_path.end+1)
+                    # assert proximal<=distal
                 else:
-                    proximal = collinear_path.start-1 # start is closer to the collinear path than end
-                    distal = 0 # max(collinear_path.start-PARAM_b, 0)
-                
+                    # distal = 0
+                    proximal = collinear_path.start-1 # max(distal, collinear_path.start-1)
+                    # assert proximal>=distal
+                assert 0<=proximal<genome_length, f'0<=proximal<genome_length is not true! {proximal=}, {genome_length=}'
+                p_length = 0
                 i = proximal
                 while genome.path[i].used==False:
+                    if i==genome_length:
+                        print(f'{i=} = genome_length')
                     v_idx = genome.path[i].vertex
-                    distance = path_length(CollinearPath(g_idx, proximal, i, 1), graph) # the order of proximal and i doesn't matter
-                    if distance>PARAM_b:
+                    p_length += graph.vertices[v_idx].length # the order of proximal and i doesn't matter
+                    if p_length>=PARAM_b:# this way, we get all extensions of length x+y, where x<b and y is the length of the last vertex of the extension
                         break
-                    if v_idx not in self.vertices:
-                        if graph.is_vertex_on_path(collinear_path, w0_idx):
-                            if collinear_path.orient==1:
-                                self.vertices[v_idx] = ExtensionVertex(1, distance, path_nr, proximal, i)
+                    w0_positions_further = [w0_pos for w0_pos in w0_positions if (i-w0_pos)*collinear_path.orient>=0]
+                    if w0_positions_further:
+                        distances = [path_length(CollinearPath(g_idx, w0_pos, i, 1), graph) for w0_pos in w0_positions_further] # orient and the order of proximal and i doesn't matter
+                        w0_position = np.argmin(distances)
+                        distance = distances[w0_position]
+                        if v_idx not in self.vertices:
+                            self.vertices[v_idx] = ExtensionVertex(1, distance, path_nr, min(proximal, i), max(proximal, i))
+                            path_start_end_check(self.vertices[v_idx], genome_length)
+                        else:
+                            coverage = self.vertices[v_idx].coverage + 1
+                            if self.vertices[v_idx].distance>distance or self.vertices[v_idx].distance<0:
+                                self.vertices[v_idx] = ExtensionVertex(coverage, distance, path_nr, min(proximal, i), max(proximal, i))
                                 path_start_end_check(self.vertices[v_idx], genome_length)
                             else:
-                                self.vertices[v_idx] = ExtensionVertex(1, distance, path_nr, i, proximal)
-                                path_start_end_check(self.vertices[v_idx], genome_length)
-                        else:
-                            self.vertices[v_idx] = ExtensionVertex(1, -1, -1, -1, -1)
+                                self.vertices[v_idx] = ExtensionVertex(coverage, *(self.vertices[v_idx][1:]))
+                    elif v_idx not in self.vertices:
+                        self.vertices[v_idx] = ExtensionVertex(1, -1, -1, -1, -1)
                     else:
                         coverage = self.vertices[v_idx].coverage + 1
-                        if (self.vertices[v_idx].distance>distance or self.vertices[v_idx].distance<0) and graph.is_vertex_on_path(collinear_path, w0_idx):
-                            if collinear_path.orient==1:
-                                self.vertices[v_idx] = ExtensionVertex(coverage, distance, path_nr, proximal, i)
-                                path_start_end_check(self.vertices[v_idx], genome_length)
-                            else:
-                                self.vertices[v_idx] = ExtensionVertex(coverage, distance, path_nr, i, proximal)
-                                path_start_end_check(self.vertices[v_idx], genome_length)
-                        else:
-                            self.vertices[v_idx] = ExtensionVertex(coverage, *self.vertices[v_idx][1:])
-                            if self.vertices[v_idx].distance>0:
-                                path_start_end_check(self.vertices[v_idx], genome_length)
+                        self.vertices[v_idx] = ExtensionVertex(coverage, *(self.vertices[v_idx][1:]))
                     
-                    if self.vertices[v_idx].distance>0:
-                        path_start_end_check(self.vertices[v_idx], genome_length)
                     if i in {0, genome_length-1}:
                         break
                     i += collinear_path.orient # going forward or backward on the genome
                 
                 if collinear_path.orient==1:
-                    self.extensions.append(CollinearPath(g_idx, proximal, distal, collinear_path.orient))
+                    self.extensions.append(CollinearPath(g_idx, proximal, i, collinear_path.orient))
                 else:
-                    self.extensions.append(CollinearPath(g_idx, distal, proximal, collinear_path.orient))
+                    self.extensions.append(CollinearPath(g_idx, i, proximal, collinear_path.orient))
                 path_start_end_check(self.extensions[-1], genome_length)
-                    
 
-                # for i in range(proximal, distal+1):
-                #     if genome.path[i].used:
-                #         distal = i # TO FIX: this should be the previous i
-                #         break
-                #     v_idx = genome.path[i].vertex
-                #     distance = path_length(CollinearPath(g_idx, proximal, i, 1), graph) # abs(i-proximal+1)
-                #     if distance>PARAM_b:
-                #         distal = i-1
-                #         break
-                #     if v_idx not in self.vertices:
-                #         if graph.is_vertex_on_path(collinear_path, w0_idx):
-                #             if collinear_path.orient==1:
-                #                 self.vertices[v_idx] = ExtensionVertex(1, distance, path_nr, proximal, i)
-                #                 path_start_end_check(self.vertices[v_idx], genome_length)
-                #             else:
-                #                 self.vertices[v_idx] = ExtensionVertex(1, distance, path_nr, i, proximal)
-                #                 path_start_end_check(self.vertices[v_idx], genome_length)
-                #         else:
-                #             self.vertices[v_idx] = ExtensionVertex(1, -1, -1, -1, -1)
-                #             path_start_end_check(self.vertices[v_idx], genome_length)
-                #     else:
-                #         coverage = self.vertices[v_idx].coverage + 1
-                #         if (self.vertices[v_idx].distance>distance or self.vertices[v_idx].distance<0) and graph.is_vertex_on_path(collinear_path, w0_idx):
-                #             if collinear_path.orient==1:
-                #                 self.vertices[v_idx] = ExtensionVertex(coverage, distance, path_nr, proximal, i)
-                #                 path_start_end_check(self.vertices[v_idx], genome_length)
-                #             else:
-                #                 self.vertices[v_idx] = ExtensionVertex(coverage, distance, path_nr, i, proximal)
-                #                 path_start_end_check(self.vertices[v_idx], genome_length)
-                #         else:
-                #             self.vertices[v_idx] = ExtensionVertex(coverage, *self.vertices[v_idx][1:])
-                #             path_start_end_check(self.vertices[v_idx], genome_length)
-
-                #     path_start_end_check(self.vertices[v_idx], genome_length)
-                
-                # if collinear_path.orient==1:
-                #     self.extensions.append(CollinearPath(g_idx, proximal, distal, collinear_path.orient))
-                # else:
-                #     self.extensions.append(CollinearPath(g_idx, distal, proximal, collinear_path.orient))
-                # path_start_end_check(self.extensions[-1], genome_length)
     
     def get_carrying_path_extension(self, graph):
         '''
@@ -359,24 +301,52 @@ class BlockExtensions:
         Function returns 
          - the shortest walk r from w0 to t.
         '''
-        t = None
         highest_coverage = -1
+        w0_to_t = None
         for v_idx in self.vertices:
             if self.vertices[v_idx].distance>0 and self.vertices[v_idx].coverage>highest_coverage:
                 # check if v is reachable from w0 and if its coverage is greater than the highest one by now
-                highest_coverage = self.vertices[v_idx].coverage
-                t = v_idx
-        if t is None:
+                w0_to_t = self.vertices[v_idx]
+                highest_coverage = w0_to_t.coverage
+        if w0_to_t is None:
             return []
         
         r = [] # list of consecutive vertices and their orientations
-        extension = self.extensions[self.vertices[t].path_nr] # namedtuple('CollinearPath', ['genome', 'start', 'end', 'orient'])
+        extension = self.extensions[w0_to_t.path_nr] # namedtuple('CollinearPath', ['genome', 'start', 'end', 'orient'])
         genome = graph.genomes[extension.genome]
-        for i in range(extension.start, extension.end+1):
+        for i in range(w0_to_t.start, w0_to_t.end+1):
             g_path_pos = genome.path[i] # namedtuple('Path', ['vertex', 'orientation', 'used'])
             r.append(ShortestPath(g_path_pos.vertex, g_path_pos.orientation*extension.orient)) # <- not sure which orientation to use
         return r
     
+def is_vertex_on_path(graph, path, w0_idx):
+    i = path.end
+    genome_path = graph.genomes[path.genome].path
+    while i>=0:
+        if genome_path[i].vertex==w0_idx:
+            return True
+        i -= 1
+    return False
+
+def find_vertex_on_path(graph, path, w0_idx):
+    positions = []
+    i = path.end
+    genome_path = graph.genomes[path.genome].path
+    while i>=0:
+        if genome_path[i].vertex==w0_idx:
+            positions.append(i)
+        i -= 1
+    return positions
+
+def mark_vertices_as_used(graph, block):
+    for collinear_path in block.collinear_paths:
+        g_idx = collinear_path.genome
+        genome_path = graph.genomes[g_idx].path
+        for i in range(collinear_path.start, collinear_path.end+1):
+            path = genome_path[i] # Path = namedtuple('Path', ['vertex', 'orientation', 'used'])
+            genome_path[i] = Path(path.vertex, path.orientation, True)
+    print(f'Marked as used: {len(block.collinear_paths)*(collinear_path.end+1-collinear_path.start)}.')
+
 def path_length(path, graph):
         length = 0
         g_idx = path.genome
@@ -392,6 +362,11 @@ def path_start_end_check(path, genome_length):
     assert path.start>=0, f'start < 0; {path=}, {genome_length-1=}'
     assert path.start<=path.end, f'end < start; {path=}'
             
+# def pathlist_start_end_check(pathlist, genome_length):
+#     path = pathlist[-1]
+#     assert path.end<genome_length, f'end >= genome_length; {pathlist=}, {genome_length=}'
+#     assert path.start>=0, f'start < 0; {pathlist=}, {genome_length-1=}'
+#     assert path.start<=path.end, f'end < start; {pathlist=}'
 
 def save_blocks(blocks:list[CollinearPath], graph_name):
     df_all = pd.DataFrame()
@@ -419,11 +394,21 @@ for graph_path in os.listdir(SRC+'data'):
         save_blocks(blocks, graph_path.split('.')[0])
 print(f'Number of blocks for consecutive options:\n{nr_blocks}')
 
+# SORT_SEEDS = 'no'
+# for graph_path in os.listdir(SRC+'data'):
+#     for i in range(10):
+#         print(f'{graph_path.upper()}, {SORT_SEEDS=}')
+#         g = Graph(SRC+'data/'+graph_path)
+#         blocks = g.find_collinear_blocks()
+#         nr_blocks.append(len(blocks))
+#         save_blocks(blocks, graph_path.split('.')[0])
+
 # IMPORTANT NOTES
 # start, end and orient once again
     # always: start<end
     # if orient==1, we extend end; otherwise - we extend start.
 
 # TO FIX:
-    # 1) compare seq lengths (not numbers of vertices) to b and m 
+    # 1) compare seq lengths (not numbers of vertices) to b and m <--- ok
     # 2) BlockExtensions init
+        # distance should be from w, not from proximal <--- ok
