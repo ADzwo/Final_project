@@ -103,7 +103,7 @@ class Graph:
                     path_start_end_check(collinear_seeds[-1], len(genome.path))
             if not collinear_seeds:
                 break
-            print('NEW SEED')
+            # print('NEW SEED')
             new_block = CollinearBlock(v_idx, collinear_seeds, carrying_seed_orientation)
             new_score = 0
             while new_score>=0:
@@ -142,30 +142,37 @@ class CollinearBlock:
 
     def scoring_function(self, graph):
         score = 0
+        carrying_len = len(self.carrying_path)
         for path in self.collinear_paths:
-            if path_length(path, graph)>=PARAM_m:#if abs(path.end - path.start)>=PARAM_m:
-                genome = graph.genomes[path.genome]
-                i = path.start
+            if path_length(path, graph)>=PARAM_m:
+                i = 0 # position on carrying path
+                p_idx = 0 # position on path
                 q1 = 0
                 bubble = 0
                 chain = 0
-                # 1) calculate length of the hanging end at the beginning of the path
-                while i<=path.end and genome.path[i].vertex not in self.carrying_path:
-                    q1 += graph.vertices[genome.path[i].vertex].length
+                # 1) calculate length of the hanging end at the beginning of carrying path
+                while i<carrying_len and self.carrying_path[i] not in path:
+                    q1 += graph.vertices[self.carrying_path[i]].length
                     if q1 > PARAM_b:
                         return -1
                     i += 1
-                if i<path.end:
-                    chain += graph.vertices[genome.path[i].vertex].length
+                if i<carrying_len:
+                    chain += graph.vertices[self.carrying_path[i]].length
+                    p_idx = i
+                    i += 1
                 
                 # 2) calculate length of the chain and the other hanging end
-                while i<=path.end:
-                    if genome.path[i].vertex in self.carrying_path:
-                        chain += bubble + graph.vertices[genome.path[i].vertex].length
+                while i<carrying_len:
+                    v_idx = self.carrying_path[i]
+                    idx_on_path, bubble_collinear = find_vertex_on_path_after_idx(graph, path, v_idx, p_idx)
+                    if idx_on_path is not None:
+                        if bubble_collinear>PARAM_b:
+                            return -1
+                        chain += bubble + graph.vertices[v_idx].length
                         bubble = 0
                     else:
-                        bubble += graph.vertices[genome.path[i].vertex].length
-                        if bubble > PARAM_b:
+                        bubble += graph.vertices[self.carrying_path[i]].length
+                        if bubble>PARAM_b:
                             return -1 # instead of -infty (from SibeliaZ algorithm)
                     i += 1
                 score += chain - (q1 + bubble)**2
@@ -254,8 +261,6 @@ class BlockExtensions:
                 p_length = 0
                 i = proximal
                 while genome.path[i].used==False:
-                    if i==genome_length:
-                        print(f'{i=} = genome_length')
                     v_idx = genome.path[i].vertex
                     p_length += graph.vertices[v_idx].length
                     if p_length>=PARAM_b:
@@ -337,6 +342,17 @@ def find_vertex_on_path(graph, path, w0_idx):
             positions.append(i)
         i -= 1
     return positions
+
+def find_vertex_on_path_after_idx(graph, path, w0_idx, p_idx):
+    i = p_idx
+    length = 0
+    genome_path = graph.genomes[path.genome].path
+    while i<=path.end:
+        length += graph.vertices[genome_path[i].vertex].length
+        if genome_path[i].vertex==w0_idx:
+            return i, length
+        i += 1
+    return None, None
 
 def mark_vertices_as_used(graph, block):
     for collinear_path in block.collinear_paths:
