@@ -18,7 +18,9 @@ Path = namedtuple('Path', ['vertex', 'orientation', 'used'])
 ExtensionVertex = namedtuple('ExtensionVertex', ['coverage', 'distance', 'path_nr', 'start', 'end'])
 ShortestPath = namedtuple('ShortestPath', ['vertex', 'orientation'])
 Occurence = namedtuple('Occurence', ['genome', 'position'])
-
+# uwaga: gdzieś w genomie można trzymać info o pozycji końcu wierzchołka (łatwo porównywalne z b!) <--- FIX THIS
+# Po zakończeniiu dużego kroku: zapamiętać rozszerzenia i z nich korzystać.
+# Pamiętać też, które wierzchołki się końćzą w starym t (nowym w0).
 class Genome:
     path: list[namedtuple] # Path: vertex index: int, orientation: int, used: bool
     
@@ -50,14 +52,18 @@ class Graph:
         self.genomes = []
         vertex_name_to_idx = {} # dict to save {vertex id from gfa file: index in Graph.vertices}
         genome_name_to_idx = {}
+        # find S lines and fill vertex_name_to_idx dict 
         with open(graph_path,'r') as graph_file:
             for line in graph_file.readlines():
                 if line.startswith('S'):
-                    v = line.strip().split('\t')
-                    vertex_name_to_idx[v[1]] = len(self.vertices)
+                    v = line.strip().split()
+                    vertex_name_to_idx[v[1]] = len(self.vertices) # {name: id}
                     self.vertices.append(Vertex(len(v[2])))
-                elif line.startswith('P'): # or 'W'
-                    g = line.strip().split('\t') # P, name, vertices' names, overlaps
+        # find P lines and fill genome_name_to_idx dict 
+        with open(graph_path,'r') as graph_file:
+            for line in graph_file.readlines():
+                if line.startswith('P'): # or 'W'
+                    g = line.strip().split() # P, name, vertices' names, overlaps
                     path = [] # list[Path] - vertex, orientation, used
                     for v_pos, vertex in enumerate(g[2].split(',')):
                         v_name = vertex[:-1]
@@ -67,6 +73,7 @@ class Graph:
                         path.append(Path(v_idx, v_orientation, False))
                     genome_name_to_idx[g[1]] = len(self.genomes)
                     self.genomes.append(Genome(path))
+        # save dictionaries to .json files
         graph_name = re.split(r'[\.\/]', graph_path)[-2]
         with open(f'{SRC}vertex_name_to_idx/{graph_name}.json', 'w') as f:
             json.dump(vertex_name_to_idx, f)
@@ -77,9 +84,9 @@ class Graph:
         collinear_blocks = []
 
         if SORT_SEEDS=='nr_occurences':
-            vertex_indices_shuffled = sorted(list(range(len(self.vertices))), key=lambda x: len(self.vertices[x].occurences))
+            vertex_indices_shuffled = sorted(list(range(len(self.vertices))), key=lambda x: len(self.vertices[x].occurences), reverse=True)
         elif SORT_SEEDS=='length':
-            vertex_indices_shuffled = sorted(list(range(len(self.vertices))), key=lambda x: len(self.vertices[x].occurences))
+            vertex_indices_shuffled = sorted(list(range(len(self.vertices))), key=lambda x: self.vertices[x].length, reverse=True)
         else:
             vertex_indices_shuffled = list(range(len(self.vertices)))
             random.shuffle(vertex_indices_shuffled)
@@ -98,11 +105,11 @@ class Graph:
                         orient = 1
                         carrying_seed_orientation = orientation
                     else:
-                        orient = orientation*carrying_seed_orientation 
+                        orient = orientation*carrying_seed_orientation
                     collinear_seeds.append(CollinearPath(g_idx, pos, pos, orient)) # namedtuple('CollinearPath', ['genome', 'start', 'end', 'orient'])
                     path_start_end_check(collinear_seeds[-1], len(genome.path))
             if not collinear_seeds:
-                break
+                continue
             # print('NEW SEED')
             new_block = CollinearBlock(v_idx, collinear_seeds, carrying_seed_orientation)
             new_score = 0
@@ -187,6 +194,9 @@ class CollinearBlock:
             # jeśli znalazłam taką ścieżkę, to przedłużam ją o jej przedłużenie obcięte do w
             # jeśli nie znalazłam, to dodaję to wystąpienie do bloku jako nową ścieżkę
 
+        # To FIX: Nie patrzeć na extensions, tylko na paths + b.
+        # (Inaczej może być tak, że ścieżka się skończy, jej stare Q nie obejmuje wspólnego wierzchołka z carrying path, 
+        # ale ten wierzchołek jest osiągalny w obrębie bubble.)
         w = graph.vertices[w_info.vertex]
         w_orient_on_carrying_path = None
         for occurence in w.occurences:
@@ -244,14 +254,15 @@ class BlockExtensions:
             genome = graph.genomes[g_idx]
             genome_length = len(genome.path)
             path_start_end_check(collinear_path, genome_length)
-            w0_positions = find_vertex_on_path(graph, collinear_path, w0_idx)
-
+            w0_positions = find_vertex_on_path(graph, collinear_path, w0_idx) # from end or start - depending on orient --- TO FIX; and check if dist<=b
+                # including the last position on the path!
+                # Można zapamiętać w poprzednim kroku, czy one się przedłużyły do obecnego w0, czyli poprzedniego t
             if collinear_path.orient==1 and collinear_path.end==genome_length-1: # if we've reached the end of the genome
                 self.extensions.append(CollinearPath(-1, -1, -1, -1)) # <- how to improve this?
-                break
+                continue
             elif collinear_path.orient==-1 and collinear_path.start==0:
                 self.extensions.append(CollinearPath(-1, -1, -1, -1))
-                break
+                continue
             else:
                 if collinear_path.orient==1: # proximal - the end of extension proximal to the collinear path
                     proximal = collinear_path.end+1
@@ -417,3 +428,9 @@ print(f'Number of blocks for consecutive options:\n{nr_blocks}')
 # start, end and orient once again
     # always: start<end
     # if orient==1, we extend end; otherwise - we extend start.
+# Do all S lines need to be before P lines in .gfa?
+    # If not - modify reading part. <--- DONE
+
+# Scoring function: bubble <= b only for the carrying path. >m only for path.
+
+# Pomysł (nie jak w artykule): update'ować Q dla danej ścieżki po małym kroku, jeśli znalazłam wspólny wierzchołek z carrying path.
