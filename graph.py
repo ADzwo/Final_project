@@ -93,8 +93,6 @@ class Graph:
             random.shuffle(vertex_indices_shuffled)
         
         for v_idx in vertex_indices_shuffled: # select a vertex --- seed of a new CollinearBlock
-            best_score = -1
-            best_block = None
             v = self.vertices[v_idx]
             collinear_seeds = [] # list to store occurences of v not used before
             for g_idx, i in v.occurences: # occurences of the vertex
@@ -111,7 +109,9 @@ class Graph:
                     walk_start_end_check(collinear_seeds[-1], len(genome.path))
             if not collinear_seeds:
                 continue
-            print('NEW SEED')
+            
+            best_score = -1
+            best_block = None
             new_block = CollinearBlock(v_idx, collinear_seeds, carrying_seed_orientation)
             new_score = 0
             while new_score>=0:
@@ -130,6 +130,7 @@ class Graph:
                         best_score = new_score
             
             if best_score>0:
+                print(f'Best score: {best_score}')
                 collinear_blocks.append(best_block)
                 mark_vertices_as_used(self, best_block)
                 
@@ -333,7 +334,7 @@ class BlockExtensions:
                         self.coverage[v_idx] = self.coverage.get(v_idx, 0) + 1
                         is_w0_before_v = (i-w0_nr_on_path)*collinear_walk.orient>=0
                         if is_w0_before_v:
-                            distance = walk_length(CollinearWalk(g_idx, w0_nr_on_path, i, 1), graph) # orient and the order of proximal and i doesn't matter
+                            distance = walk_length(CollinearWalk(g_idx, min(w0_nr_on_path,i), max(w0_nr_on_path,i), 1), graph) # orient doesn't matter
                             if v_idx not in self.shortest_walk or self.shortest_walk[v_idx].distance>distance:
                                 self.shortest_walk[v_idx] = PathFromW0(distance, walk_nr, min(proximal, i), max(proximal, i))
                                 walk_start_end_check(self.shortest_walk[v_idx], g_len)
@@ -428,10 +429,11 @@ def walk_length(walk, graph, start=None, end=None):
             start = walk.start
         if end is None:
             end = walk.end
+        assert start <= end
         if start==0:
-            return graph.vertices[genome_path[end].vertex].length
+            return genome_path[end].length
         else:
-            return graph.vertices[genome_path[end].vertex].length - graph.vertices[genome_path[start-1].vertex].length
+            return genome_path[end].length - genome_path[start-1].length
 
 def walk_start_end_check(walk, genome_length):
     assert walk.end<genome_length, f'end >= genome_length; {walk=}, {genome_length=}'
@@ -452,7 +454,7 @@ def save_blocks(blocks:list[CollinearWalk], graph_name):
         name = f'{graph_name}_{today}_sort_by_length.csv'
     else:
         name = f'{graph_name}_{today}.csv'
-    df_all.to_csv(f'blocks/{name}', index=False)
+    df_all.to_csv(f'{SRC}blocks/{name}', index=False)
 
 nr_blocks = []
 for graph_file_path in os.listdir(SRC+'data'):
@@ -464,14 +466,16 @@ for graph_file_path in os.listdir(SRC+'data'):
         save_blocks(blocks, graph_file_path.split('.')[0])
 print(f'Number of blocks for consecutive options:\n{nr_blocks}')
 
-# SORT_SEEDS = 'no'
-# for graph_file_path in os.listdir(SRC+'data'):
-#     for i in range(10):
-#         print(f'{graph_file_path.upper()}, {SORT_SEEDS=}')
-#         g = Graph(SRC+'data/'+graph_file_path)
-#         blocks = g.find_collinear_blocks()
-#         nr_blocks.append(len(blocks))
-#         save_blocks(blocks, graph_file_path.split('.')[0])
+# additional check
+SORT_SEEDS = 'no'
+for graph_file_path in os.listdir(SRC+'data'):
+    for i in range(10):
+        print(f'{graph_file_path.upper()}, {SORT_SEEDS=}')
+        g = Graph(SRC+'data/'+graph_file_path)
+        blocks = g.find_collinear_blocks()
+        nr_blocks.append(len(blocks))
+        save_blocks(blocks, graph_file_path.split('.')[0])
+print(f'Number of blocks for consecutive options:\n{nr_blocks}')
 
 # IMPORTANT NOTES
 # start, end and orient once again
