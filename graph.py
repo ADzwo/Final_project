@@ -18,8 +18,7 @@ Path = namedtuple('Path', ['vertex', 'orientation', 'used', 'length']) # length 
 PathFromW0 = namedtuple('ExtensionVertex', ['distance', 'walk_nr', 'start', 'end'])
 ShortestWalk = namedtuple('ShortestWalk', ['vertex', 'orientation'])
 Occurence = namedtuple('Occurence', ['genome', 'nr_on_path'])
-# Po zakończeniiu dużego kroku: zapamiętać rozszerzenia i z nich korzystać. <- FIX THIS
-# Pamiętać też, które wierzchołki się końćzą w starym t (nowym w0).
+
 class Genome:
     path: list[namedtuple] # Path: vertex index: int, orientation: int, used: bool
     
@@ -128,9 +127,11 @@ class Graph:
                     if new_score>best_score:
                         best_block = new_block
                         best_score = new_score
+                    elif new_score<0:
+                        break
             
             if best_score>0:
-                print(f'Best score: {best_score}')
+                # print(f'Best score: {best_score}')
                 collinear_blocks.append(best_block)
                 mark_vertices_as_used(self, best_block)
                 
@@ -153,39 +154,39 @@ class CollinearBlock:
         score = 0
         carrying_len = len(self.carrying_path)
         for walk in self.collinear_walks:
-            if walk_length(walk, graph)>=PARAM_m:
+            p = walk_length(walk, graph)
+            if p>=PARAM_m:
                 i = 0 # nr_on_path on carrying path
-                p_idx = 0 # nr_on_path on path
+                p_idx = None # nr_on_path on walk of the common vertex with carrying path
                 q1 = 0
                 bubble = 0
-                chain = 0
                 # 1) calculate length of the hanging end at the beginning of carrying path
-                while i<carrying_len and self.carrying_path[i] not in walk:
+                while i<carrying_len:
+                    v_idx = self.carrying_path[i]
+                    p_idx = find_vertex_on_path(graph, walk, v_idx, proximal=0)
+                    if p_idx is not None: # chain starts
+                        break
                     q1 += graph.vertices[self.carrying_path[i]].length
                     if q1 > PARAM_b:
                         return -1
                     i += 1
-                if i<carrying_len:
-                    chain += graph.vertices[self.carrying_path[i]].length
-                    p_idx = i
-                    i += 1
                 
                 # 2) calculate length of the chain and the other hanging end
-                while i<carrying_len:
-                    v_idx = self.carrying_path[i]
-                    idx_on_walk = find_vertex_on_path(graph, walk, v_idx, proximal=p_idx)
-                    if idx_on_walk is not None:
-                        bubble_collinear = walk_length(walk, graph, start=p_idx, end=idx_on_walk)
-                        if bubble_collinear>PARAM_b:
-                            return -1
-                        chain += bubble + graph.vertices[v_idx].length
-                        bubble = 0
-                    else:
+                if p_idx is not None:
+                    while i<carrying_len:
+                        v_idx = self.carrying_path[i]
+                        p_idx_new = find_vertex_on_path(graph, walk, v_idx, proximal=p_idx)
                         bubble += graph.vertices[self.carrying_path[i]].length
                         if bubble>PARAM_b:
-                            return -1 # instead of -infty (from SibeliaZ algorithm)
-                    i += 1
-                score += chain - (q1 + bubble)**2
+                            return -1
+                        if p_idx_new is not None: # p_idx_new is a common vertex of walk and carrying_path
+                            bubble_walk = walk_length(walk, graph, start=p_idx, end=p_idx_new)
+                            if bubble_walk>PARAM_b:
+                                return -1
+                            bubble = 0 
+                            p_idx = p_idx_new
+                        i += 1
+                score += p - (q1 + bubble)**2 # bubble is q3 from the formula in the article
         return score
 
     def update_collinear_walks(self, w_info, block_extensions, graph): # vertex_info - tuple(vertex index, orientation)
@@ -214,7 +215,6 @@ class CollinearBlock:
             # 3a) if the path is found, extend it till w AND update the extension!
             if walk_to_extend is not None:
                 walk = self.collinear_walks[walk_to_extend]
-                ######################
                 if walk.orient==1:
                     self.collinear_walks[walk_to_extend] = CollinearWalk(walk.genome, walk.start, occurence_nr_on_path, walk.orient)
                 else:
@@ -236,32 +236,6 @@ class CollinearBlock:
                     else:
                         block_extensions.extensions[walk_to_extend] = CollinearWalk(walk.genome, distal, walk.end-1, walk.orient)
                     walk_start_end_check(block_extensions.extensions[walk_to_extend], g_len)
-                # ######################
-                # if walk.orient==1:
-                #     self.collinear_walks[walk_to_extend] = CollinearWalk(walk.genome, walk.start, occurence_nr_on_path, walk.orient)
-                #     distal = occurence_nr_on_path + walk.orient
-                #     length = 0
-                #     g_len = len(graph.genomes[walk.genome].path)
-                #     if distal>=g_len:
-                #         block_extensions.extensions[walk_to_extend] = CollinearWalk(-1, -1, -1, -1)
-                #     else:
-                #         while length<=PARAM_b and distal<g_len-1:
-                #             length += graph.vertices[distal].length
-                #             distal += walk.orient
-                #         block_extensions.extensions[walk_to_extend] = CollinearWalk(walk.genome, occurence_nr_on_path+1, distal, walk.orient)
-                # else:
-                #     self.collinear_walks[walk_to_extend] = CollinearWalk(walk.genome, occurence_nr_on_path, walk.end, walk.orient)
-                #     distal = occurence_nr_on_path + walk.orient
-                #     length = 0
-                #     if distal<0:
-                #         block_extensions.extensions[walk_to_extend] = CollinearWalk(-1, -1, -1, -1)
-                #     else:
-                #         while length<=PARAM_b and distal>=0:
-                #             length += graph.vertices[distal].length
-                #             distal += walk.orient
-                #         block_extensions.extensions[walk_to_extend] = CollinearWalk(walk.genome, distal, walk.end-1, walk.orient)
-                # walk_start_end_check(self.collinear_walks[walk_to_extend], len(graph.genomes[walk.genome].path))
-                # ######################
                 
             # 3b) if such walk is not found, occurence becomes a new collinear path (provided it is not used)
             elif graph.genomes[occurence.genome].path[occurence.nr_on_path].used==False:
@@ -290,10 +264,6 @@ class BlockExtensions:
             g_idx = collinear_walk.genome
             genome = graph.genomes[g_idx]
             g_len = len(genome.path)
-            walk_start_end_check(collinear_walk, g_len)
-                # including the last position on the path!
-                # Można zapamiętać w poprzednim kroku, czy one się przedłużyły do obecnego w0, czyli poprzedniego t
-                # Uwaga: wybrać jedno wystąpienie
             if collinear_walk.orient==1 and collinear_walk.end==g_len-1: # if we've reached the end of the genome
                 self.extensions.append(CollinearWalk(-1, -1, -1, -1))
                 continue
@@ -311,6 +281,7 @@ class BlockExtensions:
                 assert 0<=to_search_from<g_len, f'0<=to_search_from<genome_length is not true! {to_search_from=}, {g_len=}'
                 
                 w0_nr_on_path = find_vertex_on_path_till_b(graph, collinear_walk, w0_idx, proximal=to_search_from) # taking the closest position to the collinear walk
+                # Shouldn't we take all relevant occurences of w0?
                 p_length = 0
                 i = proximal
                 if w0_nr_on_path is None:
@@ -380,7 +351,7 @@ def find_vertex_on_path(graph:Graph, walk:CollinearWalk, v_to_find:int, proximal
         distal = walk.end if walk.orient==1 else walk.start
     
     genome_path = graph.genomes[walk.genome].path
-    for i in range(proximal, distal+1):
+    for i in range(proximal, distal+walk.orient):
         if genome_path[i].vertex==v_to_find:
             return i
     return None
@@ -398,7 +369,7 @@ def find_vertex_on_path_till_b(graph:Graph, walk:CollinearWalk, v_to_find:int, p
     
     genome_path = graph.genomes[walk.genome].path
     length = 0
-    for i in range(proximal, distal+1):
+    for i in range(proximal, distal+walk.orient):
         v_idx = genome_path[i].vertex
         if v_idx==v_to_find:
             return i
@@ -477,16 +448,22 @@ for graph_file_path in os.listdir(SRC+'data'):
         save_blocks(blocks, graph_file_path.split('.')[0])
 print(f'Number of blocks for consecutive options:\n{nr_blocks}')
 
-# IMPORTANT NOTES
-# start, end and orient once again
-    # always: start<end
-    # if orient==1, we extend end; otherwise - we extend start.
 
-# Do all S lines need to be before P lines in .gfa?
-    # If not - modify reading part. <--- DONE
+'''
+IMPORTANT NOTES
+start, end and orient once again
+    - always: start<end
+    - if orient==1, we extend end; otherwise - we extend start.
 
-# Scoring function: bubble <= b only for the carrying path. >m only for path.
+Pomysł (nie jak w artykule): 
+    update'ować Q dla danej ścieżki po małym kroku, jeśli znalazłam wspólny wierzchołek z carrying path. <--- DONE
 
-# Pomysł (nie jak w artykule): 
-    # update'ować Q dla danej ścieżki po małym kroku, 
-    # jeśli znalazłam wspólny wierzchołek z carrying path.
+TO FIX:
+    - Po zakończeniu dużego kroku: zapamiętać rozszerzenia i z nich korzystać.
+    - Po zapamiętać scory poszczególnych ścieżek do końca łańcucha i później doliczać tylko odtąd.
+    - Budując shortest_walk w przedłużeniach: chyyyba trzeba wziąć pod uwagę 
+    wszystkie wystąpienia w0 na przedłużeniu. Wtedy nie przegapimy najkrótszej drogi.
+
+Not necessary:
+    Pamiętać po dużym kroku, które wierzchołki się końćzą w starym t (nowym w0).
+'''
