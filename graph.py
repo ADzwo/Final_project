@@ -201,7 +201,7 @@ class CollinearBlock:
             if g_path[o_nr_on_path].used==True:
                 continue
             walk_to_extend = None
-            for e_idx, extension in enumerate(block_extensions.extensions):
+            for e_idx, extension in block_extensions.extensions.items():
                 assert extension.start<=extension.end
                 if extension.genome==occurence.genome and extension.start<=o_nr_on_path<=extension.end+1:
                     if walk_to_extend is None:
@@ -237,17 +237,17 @@ class CollinearBlock:
                 self.collinear_walks.append(CollinearWalk(g_idx, o_nr_on_path, o_nr_on_path, orient))
                 walk_start_end_check(self.collinear_walks[-1], g_len)
                 # Create extension for the new collinear walk
-                block_extensions.update_extension(self.collinear_walks[-1], graph, collinear_walk_nr=None)
+                block_extensions.update_extension(self.collinear_walks[-1], graph, collinear_walk_nr=len(self.collinear_walks)-1)
                 
                   
 class BlockExtensions:
-    extensions: list[namedtuple] # list of extensions of type CollinearWalk
+    extensions: dict # list of extensions of type CollinearWalk
     coverage: dict # {vertex index: coverage}, where coverage - number of occurrences in extensions
     shortest_walk: dict  # {vertex index: (distance, *shortest_walk)}
                     # distance - length of the shortest walk from w_0
                     # shortest_walk (walk number, start, end)
     def __init__(self, collinear_walks, graph, w0_idx):
-        self.extensions = []
+        self.extensions = {}
         self.coverage = {}
         self.shortest_walk = {}
         
@@ -256,10 +256,8 @@ class BlockExtensions:
             genome = graph.genomes[g_idx]
             g_len = len(genome.path)
             if collinear_walk.orient==1 and collinear_walk.end==g_len-1: # if we've reached the end of the genome
-                self.extensions.append(CollinearWalk(-1, -1, -1, -1))
                 continue
             elif collinear_walk.orient==-1 and collinear_walk.start==0:
-                self.extensions.append(CollinearWalk(-1, -1, -1, -1))
                 continue
             else:
                 if collinear_walk.orient==1:
@@ -307,7 +305,7 @@ class BlockExtensions:
                         if i in {0, g_len-1}:
                             break
                         i += collinear_walk.orient # going forwards or backwards on the genome
-            self.extensions.append(CollinearWalk(g_idx, min(proximal, i), max(proximal, i), collinear_walk.orient))
+            self.extensions[walk_nr] = CollinearWalk(g_idx, min(proximal, i), max(proximal, i), collinear_walk.orient)
 
     
     def get_carrying_path_extension(self, graph, collinear_walks):
@@ -334,19 +332,17 @@ class BlockExtensions:
             r.append(ShortestWalk(g_path_pos.vertex, g_path_pos.orientation*walk.orient))
         return r
 
-    def update_extension(self, walk, graph, collinear_walk_nr=None):
+    def update_extension(self, walk, graph, collinear_walk_nr):
         g_idx = walk.genome
         genome = graph.genomes[g_idx]
         g_len = len(genome.path)
         proximal = walk.end + 1 if walk.orient==1 else walk.start - 1
         if proximal>=g_len or proximal<0:
-            if collinear_walk_nr is None:
-                self.extensions.append(CollinearWalk(-1, -1, -1, -1))
-            else:
-                self.extensions[collinear_walk_nr] = CollinearWalk(-1, -1, -1, -1)
+            if collinear_walk_nr in self.extensions:
+                del self.extensions[collinear_walk_nr]
         else:
             distal = proximal
-            while True: # distal>=0 and distal<g_len:
+            while True:
                 if distal<0 or distal>g_len-1:
                     distal -= walk.orient
                     break
@@ -356,12 +352,8 @@ class BlockExtensions:
                     distal -= walk.orient
                     break
                 distal += walk.orient
-            if collinear_walk_nr is None:
-                self.extensions.append(CollinearWalk(g_idx, min(proximal, distal), max(proximal, distal), walk.orient))
-                walk_start_end_check(self.extensions[-1], g_len)
-            else:
-                self.extensions[collinear_walk_nr] = CollinearWalk(g_idx, min(proximal, distal), max(proximal, distal), walk.orient)
-                walk_start_end_check(self.extensions[collinear_walk_nr], g_len)
+            self.extensions[collinear_walk_nr] = CollinearWalk(g_idx, min(proximal, distal), max(proximal, distal), walk.orient)
+            walk_start_end_check(self.extensions[collinear_walk_nr], g_len)
 
 def find_vertex_on_path(graph:Graph, walk:CollinearWalk, v_to_find:int, proximal=None, distal=None):
     '''
