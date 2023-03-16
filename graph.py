@@ -203,7 +203,7 @@ class CollinearBlock:
             walk_to_extend = None
             for e_idx, extension in block_extensions.extensions.items():
                 assert extension.start<=extension.end
-                if extension.genome==occurence.genome and extension.start<=o_nr_on_path<=extension.end+1:
+                if extension.genome==g_idx and extension.start<=o_nr_on_path<=extension.end:
                     if walk_to_extend is None:
                         walk_to_extend = e_idx
                     # 2) if there are multiple walks containing this occurence of w, 
@@ -278,7 +278,10 @@ class BlockExtensions:
                 p_length = 0
                 i = proximal
                 if w0_nr_on_path is None:
-                    while genome.path[i].used==False:
+                    while True:
+                        if genome.path[i].used==True:
+                            i -= collinear_walk.orient
+                            break
                         v_idx = genome.path[i].vertex
                         p_length += graph.vertices[v_idx].length
                         if p_length>PARAM_b: # is it ok? (TO FIX?)
@@ -289,7 +292,10 @@ class BlockExtensions:
                             break
                         i += collinear_walk.orient
                 else:
-                    while genome.path[i].used==False:
+                    while True:
+                        if genome.path[i].used==True:
+                            i -= collinear_walk.orient
+                            break
                         v_idx = genome.path[i].vertex
                         p_length += graph.vertices[v_idx].length
                         if p_length>PARAM_b: # is it ok? (TO FIX?)
@@ -327,7 +333,9 @@ class BlockExtensions:
         r = [] # list of consecutive vertices and their orientations
         walk = collinear_walks[w0_to_t.walk_nr]
         genome = graph.genomes[walk.genome]
-        for i in range(w0_to_t.start, w0_to_t.end+1):
+        to_start = walk.start if walk.orient==1 else walk.end
+        to_end = walk.end+1 if walk.orient==1 else walk.start-1
+        for i in range(to_start, to_end):
             g_path_pos = genome.path[i]
             r.append(ShortestWalk(g_path_pos.vertex, g_path_pos.orientation*walk.orient))
         return r
@@ -343,15 +351,15 @@ class BlockExtensions:
         else:
             distal = proximal
             while True:
-                if distal<0 or distal>g_len-1:
-                    distal -= walk.orient
-                    break
                 g_path_pos = genome.path[distal]
                 extension = CollinearWalk(g_idx, min(proximal, distal), max(proximal, distal), walk.orient)
                 if g_path_pos.used==True or walk_length(extension, graph)>PARAM_b:
                     distal -= walk.orient
                     break
                 distal += walk.orient
+                if distal<0 or distal>g_len-1:
+                    distal -= walk.orient
+                    break
             self.extensions[collinear_walk_nr] = CollinearWalk(g_idx, min(proximal, distal), max(proximal, distal), walk.orient)
             walk_start_end_check(self.extensions[collinear_walk_nr], g_len)
 
@@ -439,14 +447,14 @@ def save_blocks(blocks:list[CollinearWalk], graph_name):
     df_all.to_csv(f'{SRC}blocks/{name}', index=False)
 
 nr_blocks = []
-# for graph_file_path in os.listdir(SRC+'data'):
-#     for SORT_SEEDS in ['nr_occurences', 'length', 'no']:
-#         print(f'{graph_file_path.upper()}, {SORT_SEEDS=}')
-#         g = Graph(SRC+'data/'+graph_file_path)
-#         blocks = g.find_collinear_blocks()
-#         nr_blocks.append(len(blocks))
-#         save_blocks(blocks, graph_file_path.split('.')[0])
-# print(f'Number of blocks for consecutive options:\n{nr_blocks}')
+for graph_file_path in os.listdir(SRC+'data'):
+    for SORT_SEEDS in ['nr_occurences', 'length', 'no'][:2]:
+        print(f'{graph_file_path.upper()}, {SORT_SEEDS=}')
+        g = Graph(SRC+'data/'+graph_file_path)
+        blocks = g.find_collinear_blocks()
+        nr_blocks.append(len(blocks))
+        save_blocks(blocks, graph_file_path.split('.')[0])
+print(f'Number of blocks for consecutive options:\n{nr_blocks}')
 
 # additional check
 SORT_SEEDS = 'no'
@@ -466,12 +474,13 @@ start, end and orient once again
     - always: start<end
     - if orient==1, we extend end; otherwise - we extend start.
 
-Pomysł (nie jak w artykule): 
-    update'ować Q dla danej ścieżki po małym kroku, jeśli znalazłam wspólny wierzchołek z carrying path. <--- DONE
+Pomysły (nie jak w artykule): 
+    - Update'ować Q dla danej ścieżki po małym kroku, jeśli znalazłam wspólny wierzchołek z carrying path. <--- DONE
+    - Iść po ścieżce i szukać czegokolwiek, co jest w r. Wtedy sprawdzać, na czym najlepiej się zatrzymać.
 
 TO FIX:
     - Po zakończeniu dużego kroku: zapamiętać rozszerzenia i z nich korzystać.
-    - Po zapamiętać scory poszczególnych ścieżek do końca łańcucha i później doliczać tylko odtąd.
+    - Po dużym kroku zapamiętać scory poszczególnych ścieżek do końca łańcucha i później doliczać tylko odtąd.
     - Budując shortest_walk w przedłużeniach: chyyyba trzeba wziąć pod uwagę 
     wszystkie wystąpienia w0 na przedłużeniu. Wtedy nie przegapimy najkrótszej drogi.
 
