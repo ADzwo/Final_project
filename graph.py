@@ -180,7 +180,7 @@ class CollinearBlock:
                         if bubble>PARAM_b:
                             return -1
                         if p_idx_new is not None: # p_idx_new is a common vertex of walk and carrying_path
-                            bubble_walk = walk_length(walk, graph, start=p_idx, end=p_idx_new)
+                            bubble_walk = walk_length(walk, graph, start=min(p_idx,p_idx_new), end=max(p_idx,p_idx_new))
                             if bubble_walk>PARAM_b:
                                 return -1
                             bubble = 0 
@@ -191,64 +191,55 @@ class CollinearBlock:
 
     def update_collinear_walks(self, w_info, block_extensions, graph): # vertex_info - tuple(vertex index, orientation)
         w = graph.vertices[w_info.vertex]
-        w_orient_on_carrying_path = None
+        w_orient_on_carrying_path = None # calculated only if needed, once
         for occurence in w.occurences:
             # 1) search for walks, whose extensions contain the occurence of w
+            g_idx = occurence.genome
+            g_path = graph.genomes[g_idx].path
+            g_len = len(g_path)
+            o_nr_on_path = occurence.nr_on_path
+            if g_path[o_nr_on_path].used==True:
+                continue
             walk_to_extend = None
-            occurence_nr_on_path = None
             for e_idx, extension in enumerate(block_extensions.extensions):
-                if extension.genome==occurence.genome and occurence.nr_on_path in range(extension.start, extension.end+1):
+                assert extension.start<=extension.end
+                if extension.genome==occurence.genome and extension.start<=o_nr_on_path<=extension.end+1:
                     if walk_to_extend is None:
                         walk_to_extend = e_idx
-                        occurence_nr_on_path = occurence.nr_on_path
                     # 2) if there are multiple walks containing this occurence of w, 
                     # select the one ending further
                     else:
                         if extension.orient==1:
                             if self.collinear_walks[e_idx].end>self.collinear_walks[walk_to_extend].end:
                                 walk_to_extend = e_idx
-                                occurence_nr_on_path = occurence.nr_on_path
                         else:
                             if self.collinear_walks[e_idx].start<self.collinear_walks[walk_to_extend].start:
                                 walk_to_extend = e_idx
-                                occurence_nr_on_path = occurence.nr_on_path
             # 3a) if the path is found, extend it till w AND update the extension!
             if walk_to_extend is not None:
                 walk = self.collinear_walks[walk_to_extend]
                 if walk.orient==1:
-                    self.collinear_walks[walk_to_extend] = CollinearWalk(walk.genome, walk.start, occurence_nr_on_path, walk.orient)
+                    self.collinear_walks[walk_to_extend] = CollinearWalk(walk.genome, walk.start, o_nr_on_path, walk.orient)
                 else:
-                    self.collinear_walks[walk_to_extend] = CollinearWalk(walk.genome, occurence_nr_on_path, walk.end, walk.orient)
-                g_len = len(graph.genomes[walk.genome].path)
+                    self.collinear_walks[walk_to_extend] = CollinearWalk(walk.genome, o_nr_on_path, walk.end, walk.orient)
                 walk_start_end_check(self.collinear_walks[walk_to_extend], g_len)
-                distal = occurence_nr_on_path + walk.orient
-                length = 0
-                if distal>=g_len or distal<0:
-                    block_extensions.extensions[walk_to_extend] = CollinearWalk(-1, -1, -1, -1)
-                else:
-                    while distal<g_len-1 and distal>0:
-                        length += graph.vertices[distal].length
-                        if length>PARAM_b:
-                            break # distal is at most in distance PARAM_b from the collinear walk
-                        distal += walk.orient
-                    if walk.orient==1:
-                        block_extensions.extensions[walk_to_extend] = CollinearWalk(walk.genome, occurence_nr_on_path+1, distal, walk.orient)
-                    else:
-                        block_extensions.extensions[walk_to_extend] = CollinearWalk(walk.genome, distal, walk.end-1, walk.orient)
-                    walk_start_end_check(block_extensions.extensions[walk_to_extend], g_len)
+                block_extensions.update_extension(self.collinear_walks[walk_to_extend], graph, collinear_walk_nr=walk_to_extend)
                 
             # 3b) if such walk is not found, occurence becomes a new collinear path (provided it is not used)
-            elif graph.genomes[occurence.genome].path[occurence.nr_on_path].used==False:
+            elif g_path[o_nr_on_path].used==False:
                 if w_orient_on_carrying_path is None:
-                    for v_idx, v in enumerate(self.carrying_path):
-                        if v==w_info.vertex:
-                            w_orient_on_carrying_path = self.carrying_path_orientations[v_idx]
+                    for i, v_idx in enumerate(self.carrying_path):
+                        if v_idx==w_info.vertex:
+                            w_orient_on_carrying_path = self.carrying_path_orientations[i]
                             break
-                occurence_orientation = graph.genomes[occurence.genome].path[occurence.nr_on_path].orientation
+                occurence_orientation = g_path[o_nr_on_path].orientation
                 orient = w_orient_on_carrying_path * occurence_orientation
-                self.collinear_walks.append(CollinearWalk(occurence.genome, occurence.nr_on_path, occurence.nr_on_path, orient))
+                self.collinear_walks.append(CollinearWalk(g_idx, o_nr_on_path, o_nr_on_path, orient))
+                walk_start_end_check(self.collinear_walks[-1], g_len)
+                # Create extension for the new collinear walk
+                block_extensions.update_extension(self.collinear_walks[-1], graph, collinear_walk_nr=None)
                 
-                    
+                  
 class BlockExtensions:
     extensions: list[namedtuple] # list of extensions of type CollinearWalk
     coverage: dict # {vertex index: coverage}, where coverage - number of occurrences in extensions
@@ -272,15 +263,19 @@ class BlockExtensions:
                 continue
             else:
                 if collinear_walk.orient==1:
-                    proximal = collinear_walk.end+1 # proximal - the end of extension proximal to the collinear walk
+                    proximal = collinear_walk.end + 1 # proximal - the end of extension proximal to the collinear walk
                     to_search_from = proximal-collinear_walk.orient if proximal>0 else proximal
+                    to_end_search = g_len - 1
                 else:
-                    proximal = collinear_walk.start-1
+                    proximal = collinear_walk.start - 1
                     to_search_from = proximal-collinear_walk.orient if proximal<g_len-1 else proximal
+                    to_end_search = 0
                 assert 0<=proximal<g_len, f'0<=proximal<genome_length is not true! {proximal=}, {g_len=}'
                 assert 0<=to_search_from<g_len, f'0<=to_search_from<genome_length is not true! {to_search_from=}, {g_len=}'
                 
-                w0_nr_on_path = find_vertex_on_path_till_b(graph, collinear_walk, w0_idx, proximal=to_search_from) # taking the closest position to the collinear walk
+                w0_nr_on_path = find_vertex_on_path_till_b(graph, collinear_walk, w0_idx, 
+                                                           proximal=to_search_from,
+                                                           distal=to_end_search) # taking the closest position to the collinear walk
                 # Shouldn't we take all relevant occurences of w0?
                 p_length = 0
                 i = proximal
@@ -339,6 +334,35 @@ class BlockExtensions:
             r.append(ShortestWalk(g_path_pos.vertex, g_path_pos.orientation*walk.orient))
         return r
 
+    def update_extension(self, walk, graph, collinear_walk_nr=None):
+        g_idx = walk.genome
+        genome = graph.genomes[g_idx]
+        g_len = len(genome.path)
+        proximal = walk.end + 1 if walk.orient==1 else walk.start - 1
+        if proximal>=g_len or proximal<0:
+            if collinear_walk_nr is None:
+                self.extensions.append(CollinearWalk(-1, -1, -1, -1))
+            else:
+                self.extensions[collinear_walk_nr] = CollinearWalk(-1, -1, -1, -1)
+        else:
+            distal = proximal
+            while True: # distal>=0 and distal<g_len:
+                if distal<0 or distal>g_len-1:
+                    distal -= walk.orient
+                    break
+                g_path_pos = genome.path[distal]
+                extension = CollinearWalk(g_idx, min(proximal, distal), max(proximal, distal), walk.orient)
+                if g_path_pos.used==True or walk_length(extension, graph)>PARAM_b:
+                    distal -= walk.orient
+                    break
+                distal += walk.orient
+            if collinear_walk_nr is None:
+                self.extensions.append(CollinearWalk(g_idx, min(proximal, distal), max(proximal, distal), walk.orient))
+                walk_start_end_check(self.extensions[-1], g_len)
+            else:
+                self.extensions[collinear_walk_nr] = CollinearWalk(g_idx, min(proximal, distal), max(proximal, distal), walk.orient)
+                walk_start_end_check(self.extensions[collinear_walk_nr], g_len)
+
 def find_vertex_on_path(graph:Graph, walk:CollinearWalk, v_to_find:int, proximal=None, distal=None):
     '''
     Function searches for an occurance of vertex with index v_to_find on walk walk.
@@ -356,26 +380,21 @@ def find_vertex_on_path(graph:Graph, walk:CollinearWalk, v_to_find:int, proximal
             return i
     return None
 
-def find_vertex_on_path_till_b(graph:Graph, walk:CollinearWalk, v_to_find:int, proximal=None, distal=None):
+def find_vertex_on_path_till_b(graph:Graph, walk:CollinearWalk, v_to_find:int, proximal, distal):
     '''
     Function searches for an occurance of vertex with index v_to_find on walk walk.
     The search begins at index proximal and ends at index distal of walk's genome's path.
     Function returns the first index found or None, if no index has been found.
     '''
-    if proximal is None:
-        proximal = walk.start if walk.orient==1 else walk.end
-    if distal is None:
-        distal = walk.end if walk.orient==1 else walk.start
-    
     genome_path = graph.genomes[walk.genome].path
     length = 0
     for i in range(proximal, distal+walk.orient):
         v_idx = genome_path[i].vertex
-        if v_idx==v_to_find:
-            return i
         length += graph.vertices[v_idx].length
         if length>PARAM_b:
             break
+        if v_idx==v_to_find:
+            return i
     return None
 
 def mark_vertices_as_used(graph, block):
@@ -390,8 +409,8 @@ def mark_vertices_as_used(graph, block):
         for i in range(collinear_walk.start, collinear_walk.end+1):
             g_path_pos = genome_path[i]
             genome_path[i] = Path(*(g_path_pos[:-2]), True, g_path_pos[-1])
-        nr_used += collinear_walk.end+1-collinear_walk.start
-    print(f'Marked as used: {nr_used}.')
+        nr_used += walk_length(collinear_walk, graph)
+    # print(f'Marked as used: {nr_used}.')
 
 def walk_length(walk, graph, start=None, end=None):
         g_idx = walk.genome
@@ -428,14 +447,14 @@ def save_blocks(blocks:list[CollinearWalk], graph_name):
     df_all.to_csv(f'{SRC}blocks/{name}', index=False)
 
 nr_blocks = []
-for graph_file_path in os.listdir(SRC+'data'):
-    for SORT_SEEDS in ['nr_occurences', 'length', 'no']:
-        print(f'{graph_file_path.upper()}, {SORT_SEEDS=}')
-        g = Graph(SRC+'data/'+graph_file_path)
-        blocks = g.find_collinear_blocks()
-        nr_blocks.append(len(blocks))
-        save_blocks(blocks, graph_file_path.split('.')[0])
-print(f'Number of blocks for consecutive options:\n{nr_blocks}')
+# for graph_file_path in os.listdir(SRC+'data'):
+#     for SORT_SEEDS in ['nr_occurences', 'length', 'no']:
+#         print(f'{graph_file_path.upper()}, {SORT_SEEDS=}')
+#         g = Graph(SRC+'data/'+graph_file_path)
+#         blocks = g.find_collinear_blocks()
+#         nr_blocks.append(len(blocks))
+#         save_blocks(blocks, graph_file_path.split('.')[0])
+# print(f'Number of blocks for consecutive options:\n{nr_blocks}')
 
 # additional check
 SORT_SEEDS = 'no'
