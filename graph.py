@@ -16,7 +16,7 @@ assert SORT_SEEDS in {'no', 'nr_occurences', 'length'}, f'SORT_SEEDS must be one
 CollinearWalk = namedtuple('CollinearWalk', ['genome', 'start', 'end', 'orient'])
 Path = namedtuple('Path', ['vertex', 'orientation', 'used', 'length']) # length --- length of the suffix of the genome, ending at the last character of this vertex
 PathFromW0 = namedtuple('ExtensionVertex', ['distance', 'walk_nr', 'start', 'end'])
-ShortestWalk = namedtuple('ShortestWalk', ['vertex', 'orientation'])
+CarryingPathExtension = namedtuple('CarryingPathExtension', ['vertex', 'orientation'])
 Occurence = namedtuple('Occurence', ['genome', 'nr_on_path'])
 
 class Genome:
@@ -202,7 +202,6 @@ class CollinearBlock:
                 continue
             walk_to_extend = None
             for e_idx, extension in block_extensions.extensions.items():
-                assert extension.start<=extension.end
                 if extension.genome==g_idx and extension.start<=o_nr_on_path<=extension.end:
                     if walk_to_extend is None:
                         walk_to_extend = e_idx
@@ -337,14 +336,14 @@ class BlockExtensions:
         to_end = walk.end+1 if walk.orient==1 else walk.start-1
         for i in range(to_start, to_end):
             g_path_pos = genome.path[i]
-            r.append(ShortestWalk(g_path_pos.vertex, g_path_pos.orientation*walk.orient))
+            r.append(CarryingPathExtension(g_path_pos.vertex, g_path_pos.orientation*walk.orient))
         return r
 
     def update_extension(self, walk, graph, collinear_walk_nr):
         g_idx = walk.genome
         genome = graph.genomes[g_idx]
         g_len = len(genome.path)
-        proximal = walk.end + 1 if walk.orient==1 else walk.start - 1
+        proximal = walk.end+1 if walk.orient==1 else walk.start-1
         if proximal>=g_len or proximal<0:
             if collinear_walk_nr in self.extensions:
                 del self.extensions[collinear_walk_nr]
