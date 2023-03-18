@@ -132,6 +132,8 @@ class Graph:
                         best_score = new_score
                     elif new_score<0:
                         break
+                # print(f'{len(new_block.carrying_path)=}')
+                # print(f'{new_block.carrying_path_length_so_far=}')
             
             if best_score>0:
                 print(f'Best score: {best_score}')
@@ -213,7 +215,7 @@ class CollinearBlock:
                 old_score = self.scores[walk_to_extend]
                 if old_score.q3+wi.length>PARAM_b and walk_length(self.collinear_walks[walk_to_extend], graph)>=PARAM_m:
                     self.scores = [Score(self.carrying_path_length_so_far, 0, 0, 0)]
-                    print('To high q3 ---> score<0')
+                    print('Too high q3 ---> score<0')
                     return
                 self.scores[walk_to_extend] = Score(old_score.q1, 0, o_nr_on_path, len(self.carrying_path))
                 walks_updated_score.add(walk_to_extend)
@@ -235,7 +237,7 @@ class CollinearBlock:
                 # print(f'\t{self.collinear_walks[-1]=}, \n\t{block_extensions.extensions[len(self.collinear_walks)-1]=}')
                 if wi.length>=PARAM_m and self.carrying_path_length_so_far>PARAM_b:
                     self.scores = [Score(self.carrying_path_length_so_far, 0, 0, 0)]
-                    print('To high q1 ---> score<0')
+                    print('Too high q1 ---> score<0')
                     return # We don't check any other occurences and set block's score to -1
                 self.scores.append(Score(self.carrying_path_length_so_far, 0, o_nr_on_path, len(self.carrying_path))) # ['q1', 'q3', 'idx_g_path', 'idx_c_path']
                 
@@ -243,7 +245,10 @@ class CollinearBlock:
         for w_idx in range(len(self.collinear_walks)):
             if w_idx not in walks_updated_score:
                 old_score = self.scores[w_idx]
-                self.scores[w_idx] = Score(old_score.q1, old_score.q3+wi.length, o_nr_on_path, len(self.carrying_path))
+                if old_score.q3+wi.length>PARAM_b and walk_length(self.collinear_walks[w_idx], graph)>=PARAM_m:
+                    self.scores = [Score(self.carrying_path_length_so_far, 0, 0, 0)]
+                    return
+                self.scores[w_idx] = Score(old_score.q1, old_score.q3+wi.length, old_score.idx_g_path, len(self.carrying_path))
                   
 class BlockExtensions:
     extensions: dict # list of extensions of type CollinearWalk
@@ -399,7 +404,7 @@ def find_vertex_on_path_till_b(graph:Graph, walk:CollinearWalk, v_to_find:int, p
     for i in range(proximal, distal+walk.orient):
         v_idx = genome_path[i].vertex
         length += graph.vertices[v_idx].length
-        if length>PARAM_b:
+        if length>PARAM_b: # maybe change it?
             break
         if v_idx==v_to_find:
             return i
