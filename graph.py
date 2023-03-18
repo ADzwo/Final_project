@@ -18,6 +18,7 @@ Path = namedtuple('Path', ['vertex', 'orientation', 'used', 'length']) # length 
 PathFromW0 = namedtuple('ExtensionVertex', ['distance', 'walk_nr', 'start', 'end'])
 CarryingPathExtension = namedtuple('CarryingPathExtension', ['vertex', 'orientation'])
 Occurence = namedtuple('Occurence', ['genome', 'nr_on_path'])
+Score = namedtuple('Score', ['q1', 'q3', 'idx_g_path', 'idx_c_path']) # last indices used to calculate score_so_far, for genome and carrying path
 
 class Genome:
     path: list[namedtuple] # Path: vertex index: int, orientation: int, used: bool
@@ -109,6 +110,7 @@ class Graph:
             if not collinear_seeds:
                 continue
             
+            walk_scores = []
             best_score = -1
             best_block = None
             new_block = CollinearBlock(v_idx, collinear_seeds, carrying_seed_orientation)
@@ -123,7 +125,7 @@ class Graph:
                     new_block.carrying_path.append(wi.vertex)
                     new_block.carrying_path_orientations.append(wi.orientation)
                     new_block.update_collinear_walks(wi, Q, self)
-                    new_score = new_block.scoring_function(self)
+                    new_score, walk_scores = new_block.scoring_function(self, walk_scores)
                     if new_score>best_score:
                         best_block = new_block
                         best_score = new_score
@@ -145,49 +147,63 @@ class CollinearBlock:
                                     # start index from genome's path: int,
                                     # end index from genome's path: int,
                                     # orientaion with respect to the path: int
-    def __init__(self, v_initial_idx, v_occurences, carrying_path_seed_orientation):
+    def __init__(self, v_initial_idx, v_occurences, carrying_seed_orientation):
         self.carrying_path = [v_initial_idx] # vertex index
-        self.carrying_path_orientations = [carrying_path_seed_orientation] # orientation
+        self.carrying_path_orientations = [carrying_seed_orientation] # orientation
         self.collinear_walks = v_occurences # one of the collinear walks starts with the same vertex as the carrying path
 
-    def scoring_function(self, graph):
+    def scoring_function(self, graph, walk_scores):
         score = 0
         carrying_len = len(self.carrying_path)
-        for walk in self.collinear_walks:
+        for w_idx, walk in enumerate(self.collinear_walks):
             p = walk_length(walk, graph)
             if p>=PARAM_m:
-                i = 0 # nr_on_path on carrying path
-                p_idx = None # nr_on_path on walk of the common vertex with carrying path
-                q1 = 0
-                bubble = 0
-                # 1) calculate length of the hanging end at the beginning of carrying path
-                while i<carrying_len:
-                    v_idx = self.carrying_path[i]
-                    p_idx = find_vertex_on_path(graph, walk, v_idx, proximal=0)
-                    if p_idx is not None: # chain starts
-                        break
-                    q1 += graph.vertices[self.carrying_path[i]].length
-                    if q1 > PARAM_b:
-                        return -1
-                    i += 1
-                
+                if w_idx<len(walk_scores):
+                    q1 = walk_scores[w_idx].q1
+                    q3 = walk_scores[w_idx].q3
+                    i = walk_scores[w_idx].idx_c_path
+                    p_idx = walk_scores[w_idx].idx_g_path
+                else:
+                    i = 0 # nr_on_path on carrying path
+                    p_idx = None # nr_on_path on walk of the common vertex with carrying path
+                    q1 = 0
+                    q3 = 0
+                    # 1) calculate length of the hanging end at the beginning of carrying path
+                    while i<carrying_len:
+                        v_idx = self.carrying_path[i]
+                        p_idx = find_vertex_on_path(graph, walk, v_idx, proximal=0)
+                        if p_idx is not None: # chain starts
+                            break
+                        q1 += graph.vertices[self.carrying_path[i]].length
+                        if q1 > PARAM_b:
+                            return -1, []
+                        i += 1
                 # 2) calculate length of the chain and the other hanging end
                 if p_idx is not None:
                     while i<carrying_len:
                         v_idx = self.carrying_path[i]
                         p_idx_new = find_vertex_on_path(graph, walk, v_idx, proximal=p_idx)
-                        bubble += graph.vertices[self.carrying_path[i]].length
-                        if bubble>PARAM_b:
-                            return -1
-                        if p_idx_new is not None: # p_idx_new is a common vertex of walk and carrying_path
+                        q3 += graph.vertices[self.carrying_path[i]].length
+                        if q3>PARAM_b:
+                            return -1, []
+                        i += 1 # before if, because i needs to be increased before break
+                        if p_idx_new is not None: # p_idx_new is None or index on walk of a common vertex of walk and carrying_path
                             bubble_walk = walk_length(walk, graph, start=min(p_idx,p_idx_new), end=max(p_idx,p_idx_new))
                             if bubble_walk>PARAM_b:
-                                return -1
-                            bubble = 0 
+                                return -1, []
+                            q3 = 0 
                             p_idx = p_idx_new
-                        i += 1
-                score += p - (q1 + bubble)**2 # bubble is q3 from the formula in the article
-        return score
+                            if p_idx==p-1:
+                                while i<carrying_len:
+                                    q3 += graph.vertices[self.carrying_path[i]].length
+                                    i += 1
+                                break
+                score += p - (q1 + q3)**2
+                if w_idx<len(walk_scores):
+                    walk_scores[w_idx] = Score(q1, q3, p_idx, i) # i is the index of carrying_path to start with next time
+                else:
+                    walk_scores.append(Score(q1, q3, p_idx, i))
+        return score, walk_scores
 
     def update_collinear_walks(self, w_info, block_extensions, graph): # vertex_info - tuple(vertex index, orientation)
         w = graph.vertices[w_info.vertex]
@@ -273,7 +289,7 @@ class BlockExtensions:
                 w0_nr_on_path = find_vertex_on_path_till_b(graph, collinear_walk, w0_idx, 
                                                            proximal=to_search_from,
                                                            distal=to_end_search) # taking the closest position to the collinear walk
-                # Shouldn't we take all relevant occurences of w0?
+                # Shouldn't we take all relevant occurences of w0? <--- TO FIX?
                 p_length = 0
                 i = proximal
                 if w0_nr_on_path is None:
