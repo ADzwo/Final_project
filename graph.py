@@ -6,7 +6,7 @@ from collections import namedtuple
 import pandas as pd
 import numpy as np
 from datetime import date
-SRC = '/root/agesia/magisterka/'
+SRC = '/home/agesia/magisterka/Reading_graphs/'
 
 PARAM_m = 50
 PARAM_b = 200
@@ -120,10 +120,11 @@ class Graph:
                 r = Q.get_carrying_path_extension(self, new_block.collinear_walks) # r - shortest walk from w0 to t (vertex, orientation), where t - index of the most frequently visited vertex;
                 if not r:
                     break
-                # print(f'{r=}')
-                # print(f'{w0_idx=}')
-                if len(r)==1 and r[0].vertex==w0_idx:
-                    break #raise ValueError('r is one-element list and it contains only w0.')
+                print(f'{w0_idx=}')
+                print(f'{r=}')
+                if r[-1].vertex==w0_idx:
+                    print('r[-1].vertex==w0_idx')
+                    break # raise ValueError('r ends with w0.')
                 for wi in r:
                     new_block.carrying_path.append(wi.vertex)
                     new_block.carrying_path_orientations.append(wi.orientation)
@@ -188,8 +189,6 @@ class CollinearBlock:
                 continue
             walk_to_extend = None
             for e_idx, extension in block_extensions.extensions.items():
-                # min_range = extension.start-1 if extension.orient==1 else extension.start
-                # max_range = extension.end if extension.orient==1 else extension.end+1
                 if extension.genome==g_idx and extension.start<=o_nr_on_path<=extension.end:
                     if walk_to_extend is None:
                         walk_to_extend = e_idx
@@ -294,16 +293,17 @@ class BlockExtensions:
                 # Shouldn't we take all relevant occurences of w0? <--- TO FIX?
                 p_length = 0
                 i = proximal
-                if w0_nr_on_path is None:
-                    # only increase coverage
+                if w0_nr_on_path is None: # only increase coverage
                     while True:
                         if g_path[i].used==True:
-                            i -= collinear_walk.orient
+                            if i!=proximal:
+                                i -= collinear_walk.orient
                             break
                         v_idx = g_path[i].vertex
                         p_length += graph.vertices[v_idx].length
                         if p_length>PARAM_b: # is it ok? (TO FIX?)
-                            i -= collinear_walk.orient
+                            if i!=proximal:
+                                i -= collinear_walk.orient
                             break
                         self.coverage[v_idx] = self.coverage.get(v_idx, 0) + 1
                         if i in {0, g_len-1}:
@@ -312,12 +312,14 @@ class BlockExtensions:
                 else:
                     while True:
                         if g_path[i].used==True:
-                            i -= collinear_walk.orient
+                            if i!=proximal:
+                                i -= collinear_walk.orient
                             break
                         v_idx = g_path[i].vertex
                         p_length += graph.vertices[v_idx].length
                         if p_length>PARAM_b: # is it ok? (TO FIX?)
-                            i -= collinear_walk.orient
+                            if i!=proximal:
+                                i -= collinear_walk.orient
                             break
                         self.coverage[v_idx] = self.coverage.get(v_idx, 0) + 1
                         is_w0_before_v = (i-w0_nr_on_path)*collinear_walk.orient>=0
@@ -330,6 +332,11 @@ class BlockExtensions:
                             break
                         i += collinear_walk.orient # going forwards or backwards on the genome
             self.extensions[walk_nr] = CollinearWalk(g_idx, min(proximal, i), max(proximal, i), collinear_walk.orient)
+            if collinear_walk.orient==1:
+                assert self.extensions[walk_nr].start==collinear_walk.end+1, f'{self.extensions[walk_nr]=}, {collinear_walk=}, {g_len=}'
+            else:
+                assert self.extensions[walk_nr].end==collinear_walk.start-1, f'{self.extensions[walk_nr]=}, {collinear_walk=}, {g_len=}'
+            walk_start_end_check(self.extensions[walk_nr], g_len)
 
     
     def get_carrying_path_extension(self, graph, collinear_walks):
