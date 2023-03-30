@@ -6,7 +6,6 @@ from collections import namedtuple
 import pandas as pd
 import numpy as np
 from datetime import date
-SRC = '/home/agesia/magisterka/Reading_graphs/'
 
 PARAM_m = 50
 PARAM_b = 200
@@ -76,9 +75,9 @@ class Graph:
                     self.genomes.append(Genome(path))
         # save dictionaries to .json files
         graph_name = re.split(r'[\.\/]', graph_file_path)[-2]
-        with open(f'{SRC}vertex_name_to_idx/{graph_name}.json', 'w') as f:
+        with open(f'vertex_name_to_idx/{graph_name}.json', 'w') as f:
             json.dump(vertex_name_to_idx, f)
-        with open(f'{SRC}genome_name_to_idx/{graph_name}.json', 'w') as f:
+        with open(f'genome_name_to_idx/{graph_name}.json', 'w') as f:
             json.dump(genome_name_to_idx, f)
 
     def find_collinear_blocks(self):
@@ -451,12 +450,16 @@ def walk_start_end_check(walk, genome_length):
     assert walk.start>=0, f'start < 0; {walk=}, {genome_length-1=}'
     assert walk.start<=walk.end, f'end < start; {walk=}'
 
-def save_blocks(blocks:list[CollinearWalk], graph_name):
+def save_blocks(blocks:list[CollinearWalk], graph_name, graph):
     df_all = pd.DataFrame()
+    walk_lengths = []
     for b_nr, block in enumerate(blocks):
+        for walk in block.collinear_walks:
+            walk_lengths.append(walk_length(walk, graph))
         df = pd.DataFrame.from_records(block.collinear_walks, columns=CollinearWalk._fields)
         df['block_nr'] = b_nr
         df_all = pd.concat([df_all, df])
+        df_all['walk_length'] = walk_lengths
     today = str(date.today()).replace('-', '_')
     
     if SORT_SEEDS=='nr_occurrences':
@@ -465,28 +468,28 @@ def save_blocks(blocks:list[CollinearWalk], graph_name):
         name = f'{graph_name}_{today}_sort_by_length.csv'
     else:
         name = f'{graph_name}_{today}.csv'
-    df_all.to_csv(f'{SRC}blocks/{name}', index=False)
+    df_all.to_csv(f'blocks/{name}', index=False)
 
 
 nr_blocks = []
-for graph_file_path in os.listdir(SRC+'data'):
+for graph_file_path in os.listdir('data'):
     for SORT_SEEDS in ['nr_occurrences', 'length', 'no'][:2]:
         print(f'{graph_file_path.upper()}, {SORT_SEEDS=}')
-        g = Graph(SRC+'data/'+graph_file_path)
+        g = Graph('data/'+graph_file_path)
         blocks = g.find_collinear_blocks()
         nr_blocks.append(len(blocks))
-        save_blocks(blocks, graph_file_path.split('.')[0])
+        save_blocks(blocks, graph_file_path.split('.')[0], g)
 print(f'Number of blocks for consecutive options:\n{nr_blocks}')
 
 # additional check
 SORT_SEEDS = 'no'
-for graph_file_path in os.listdir(SRC+'data'):
+for graph_file_path in os.listdir('data'):
     for i in range(10):
         print(f'{graph_file_path.upper()}, {SORT_SEEDS=}')
-        g = Graph(SRC+'data/'+graph_file_path)
+        g = Graph('data/'+graph_file_path)
         blocks = g.find_collinear_blocks()
         nr_blocks.append(len(blocks))
-        save_blocks(blocks, graph_file_path.split('.')[0])
+        save_blocks(blocks, graph_file_path.split('.')[0], g)
 print(f'Number of blocks for consecutive options:\n{nr_blocks}')
 
 
