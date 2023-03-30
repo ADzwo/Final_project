@@ -15,7 +15,7 @@ assert SORT_SEEDS in {'no', 'nr_occurrences', 'length'}, f'SORT_SEEDS must be on
 
 CollinearWalk = namedtuple('CollinearWalk', ['genome', 'start', 'end', 'orient'])
 Path = namedtuple('Path', ['vertex', 'orientation', 'used', 'length']) # length --- length of the suffix of the genome, ending at the last character of this vertex
-PathFromW0 = namedtuple('ExtensionVertex', ['distance', 'walk_nr', 'start', 'end'])
+PathFromW0 = namedtuple('ExtensionVertex', ['distance', 'walk_nr', 'w0_nr_on_path', 't_nr_on_path'])
 CarryingPathExtension = namedtuple('CarryingPathExtension', ['vertex', 'orientation'])
 occurrence = namedtuple('occurrence', ['genome', 'nr_on_path'])
 Score = namedtuple('Score', ['q1', 'q3', 'idx_g_path', 'idx_c_path']) # last indices used to calculate score_so_far, for genome and carrying path
@@ -109,7 +109,6 @@ class Graph:
                     walk_start_end_check(collinear_seeds[-1], len(genome.path))
             if not collinear_seeds:
                 continue
-            # print(f'NEW SEED: {v_idx}')
             best_score = -1
             best_block = None
             new_block = CollinearBlock(v_idx, collinear_seeds, carrying_seed_orientation)
@@ -120,32 +119,25 @@ class Graph:
                 r = Q.get_carrying_path_extension(self, new_block.collinear_walks) # r - shortest walk from w0 to t (vertex, orientation), where t - index of the most frequently visited vertex;
                 if not r:
                     break
-                print(f'{w0_idx=}')
-                print(f'{r=}')
                 if r[-1].vertex==w0_idx:
-                    print('r[-1].vertex==w0_idx')
+                    print('\tr[-1].vertex==w0_idx')
                     break
                 if r[0].vertex==w0_idx:
-                    print('r[0].vertex==w0_idx')
+                    print('\tr[0].vertex==w0_idx')
                     break
                 for wi in r:
                     new_block.carrying_path.append(wi.vertex)
                     new_block.carrying_path_orientations.append(wi.orientation)
                     new_block.update_collinear_walks(wi, Q, self)
                     new_score = new_block.scoring_function(self)
-                    # print(f'{new_score=}')
                     new_block.carrying_path_length_so_far += self.vertices[wi.vertex].length
                     if new_score>best_score:
                         best_block = new_block
                         best_score = new_score
-                        # print(f'{best_score=}')
                     elif new_score<0:
                         break
-                # print(f'{len(new_block.carrying_path)=}')
-                # print(f'{new_block.carrying_path_length_so_far=}')
             
             if best_score>0:
-                # print(f'Best score: {best_score}')
                 collinear_blocks.append(best_block)
                 mark_vertices_as_used(self, best_block)
                 
@@ -207,16 +199,13 @@ class CollinearBlock:
             # 3a) if the path is found, extend it till w AND update the extension!
             if walk_to_extend is not None:
                 extension = block_extensions.extensions[walk_to_extend]
-                if (extension.orient==1 and o_nr_on_path==extension.start-1) or (extension.orient==-1 and o_nr_on_path==extension.end+1):
-                    walks_updated_score.add(walk_to_extend)
-                    continue
                 walk = self.collinear_walks[walk_to_extend]
                 if walk.orient==1:
+                    assert walk.end < o_nr_on_path # walk.start < o_nr_on_path
                     self.collinear_walks[walk_to_extend] = CollinearWalk(walk.genome, walk.start, o_nr_on_path, walk.orient)
                 else:
+                    assert o_nr_on_path < walk.start # o_nr_on_path < walk.end
                     self.collinear_walks[walk_to_extend] = CollinearWalk(walk.genome, o_nr_on_path, walk.end, walk.orient)
-                # print('walk_to_extend is not None')
-                # print(f'\t{self.collinear_walks[walk_to_extend]=}')
                 walk_start_end_check(self.collinear_walks[walk_to_extend], g_len)
                 block_extensions.update_extension(self.collinear_walks[walk_to_extend], graph, collinear_walk_nr=walk_to_extend)
                 old_score = self.scores[walk_to_extend]
@@ -240,8 +229,6 @@ class CollinearBlock:
                 walk_start_end_check(self.collinear_walks[-1], g_len)
                 # Create extension for the new collinear walk
                 block_extensions.update_extension(self.collinear_walks[-1], graph, collinear_walk_nr=len(self.collinear_walks)-1)
-                # print(f'adding new walk')
-                # print(f'\t{self.collinear_walks[-1]=}, \n\t{block_extensions.extensions[len(self.collinear_walks)-1]=}')
                 if wi.length>=PARAM_m and self.carrying_path_length_so_far>PARAM_b:
                     self.scores = [Score(self.carrying_path_length_so_far, 0, 0, 0)]
                     print('Too high q1 ---> score<0')
@@ -274,10 +261,8 @@ class BlockExtensions:
             g_path = graph.genomes[g_idx].path
             g_len = len(g_path)
             if collinear_walk.orient==1 and collinear_walk.end==g_len-1: # if we've reached the end of the genome
-                # print(f'walk {walk_nr} will not be prolonged, {collinear_walk.orient=}')
                 continue
             elif collinear_walk.orient==-1 and collinear_walk.start==0:
-                # print(f'walk {walk_nr} will not be prolonged, {collinear_walk.orient=}')
                 continue
             else:
                 if collinear_walk.orient==1:
@@ -327,10 +312,11 @@ class BlockExtensions:
                         self.coverage[v_idx] = self.coverage.get(v_idx, 0) + 1
                         is_w0_before_v = (i-w0_nr_on_path)*collinear_walk.orient>=0
                         if is_w0_before_v:
-                            distance = walk_length(CollinearWalk(g_idx, w0_nr_on_path, i, 1), graph) # orient doesn't matter
+                            distance = walk_length(CollinearWalk(g_idx, w0_nr_on_path, i, 1), graph)
                             if v_idx not in self.shortest_walk or self.shortest_walk[v_idx].distance>distance:
-                                self.shortest_walk[v_idx] = PathFromW0(distance, walk_nr, min(proximal, i), max(proximal, i))
-                                walk_start_end_check(self.shortest_walk[v_idx], g_len)
+                                self.shortest_walk[v_idx] = PathFromW0(distance, walk_nr, w0_nr_on_path+collinear_walk.orient, i)
+                                assert self.shortest_walk[v_idx].w0_nr_on_path<g_len, f'{self.shortest_walk[v_idx].w0_nr_on_path=}, {g_len=}'
+                                assert self.shortest_walk[v_idx].t_nr_on_path<g_len, f'{self.shortest_walk[v_idx].t_nr_on_path=}, {g_len=}'
                         if i in {0, g_len-1}:
                             break
                         i += collinear_walk.orient # going forwards or backwards on the genome
@@ -361,8 +347,8 @@ class BlockExtensions:
         r = []
         walk = collinear_walks[w0_to_t.walk_nr] 
         genome = graph.genomes[walk.genome]
-        to_start = w0_to_t.start if walk.orient==1 else w0_to_t.end  # ['distance', 'walk_nr', 'start', 'end']
-        to_end = w0_to_t.end+1 if walk.orient==1 else w0_to_t.start-1
+        to_start = w0_to_t.w0_nr_on_path + walk.orient
+        to_end = w0_to_t.t_nr_on_path + walk.orient
         for i in range(to_start, to_end):
             g_path_pos = genome.path[i]
             r.append(CarryingPathExtension(g_path_pos.vertex, g_path_pos.orientation*walk.orient))
@@ -373,7 +359,6 @@ class BlockExtensions:
         genome = graph.genomes[g_idx]
         g_len = len(genome.path)
         proximal = walk.end+1 if walk.orient==1 else walk.start-1
-        # g_path_pos = genome.path[proximal]
         if proximal>=g_len or proximal<0 or genome.path[proximal].used==True or graph.vertices[genome.path[proximal].vertex].length>PARAM_b:
             if collinear_walk_nr in self.extensions:
                 del self.extensions[collinear_walk_nr]
@@ -425,7 +410,7 @@ def find_vertex_on_path_till_b(graph:Graph, walk:CollinearWalk, v_to_find:int, p
     for i in range(proximal, distal+walk.orient):
         v_idx = genome_path[i].vertex
         if genome_path[i].used==True:
-            break ###
+            break
         length += graph.vertices[v_idx].length
         if length>PARAM_b: # maybe change it?
             break
@@ -446,7 +431,7 @@ def mark_vertices_as_used(graph, block):
             g_path_pos = genome_path[i]
             genome_path[i] = Path(*(g_path_pos[:-2]), True, g_path_pos[-1])
         nr_used += walk_length(collinear_walk, graph)
-    # print(f'Marked as used: {nr_used}.')
+    print(f'Marked as used: {nr_used}.')
 
 def walk_length(walk, graph, start=None, end=None):
         g_idx = walk.genome
@@ -481,6 +466,7 @@ def save_blocks(blocks:list[CollinearWalk], graph_name):
     else:
         name = f'{graph_name}_{today}.csv'
     df_all.to_csv(f'{SRC}blocks/{name}', index=False)
+
 
 nr_blocks = []
 for graph_file_path in os.listdir(SRC+'data'):
@@ -519,6 +505,7 @@ TO FIX:
     - Po dużym kroku zapamiętać scory poszczególnych ścieżek do końca łańcucha i później doliczać tylko odtąd.
     - Budując shortest_walk w przedłużeniach: chyyyba trzeba wziąć pod uwagę 
     wszystkie wystąpienia w0 na przedłużeniu. Wtedy nie przegapimy najkrótszej drogi.
+    - Dlaczego są zapętlenia? Może trzeba sprawdzać rzeczywiście przedłużenia szukając r?
 
 Not necessary:
     Pamiętać po dużym kroku, które wierzchołki się końćzą w starym t (nowym w0).
