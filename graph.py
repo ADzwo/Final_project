@@ -18,7 +18,7 @@ Path = namedtuple('Path', ['vertex', 'orientation', 'used', 'length']) # length 
 PathFromW0 = namedtuple('ExtensionVertex', ['distance', 'walk_nr', 'w0_nr_on_path', 't_nr_on_path'])
 CarryingPathExtension = namedtuple('CarryingPathExtension', ['vertex', 'orientation'])
 occurrence = namedtuple('occurrence', ['genome', 'nr_on_path'])
-Score = namedtuple('Score', ['q1', 'q3', 'idx_g_path', 'idx_c_path']) # last indices used to calculate score_so_far, for genome and carrying path
+Score = namedtuple('Score', ['q1', 'q3'])
 
 class Genome:
     path: list[namedtuple] # Path: vertex index: int, orientation: int, used: bool
@@ -105,7 +105,7 @@ class Graph:
                         carrying_seed_orientation = g_path_pos.orientation
                     else:
                         orient = g_path_pos.orientation*carrying_seed_orientation
-                    collinear_seeds.append(CollinearWalk(g_idx, i, i, orient)) # namedtuple('CollinearWalk', ['genome', 'start', 'end', 'orient'])
+                    collinear_seeds.append(CollinearWalk(g_idx, i, i, orient))
                     walk_start_end_check(collinear_seeds[-1], len(genome.path))
             if not collinear_seeds:
                 continue
@@ -157,7 +157,7 @@ class CollinearBlock:
         self.carrying_path = [seed_idx] # vertex index
         self.carrying_path_orientations = [carrying_seed_orientation] # orientation
         self.collinear_walks = seed_occurrences # one of the collinear walks starts with the same vertex as the carrying path
-        self.scores = [Score(0, 0, w.start, 1) for w in self.collinear_walks] # ['q1', 'q3', 'idx_g_path', 'idx_c_path']
+        self.scores = [Score(0, 0) for w in self.collinear_walks] # ['q1', 'q3']
         self.carrying_path_length_so_far = 0
 
     def scoring_function(self, graph):
@@ -203,19 +203,19 @@ class CollinearBlock:
                 extension = block_extensions.extensions[walk_to_extend]
                 walk = self.collinear_walks[walk_to_extend]
                 if walk.orient==1:
-                    assert walk.end < o_nr_on_path # walk.start < o_nr_on_path
+                    assert walk.end < o_nr_on_path
                     self.collinear_walks[walk_to_extend] = CollinearWalk(walk.genome, walk.start, o_nr_on_path, walk.orient)
                 else:
-                    assert o_nr_on_path < walk.start # o_nr_on_path < walk.end
+                    assert o_nr_on_path < walk.start
                     self.collinear_walks[walk_to_extend] = CollinearWalk(walk.genome, o_nr_on_path, walk.end, walk.orient)
                 walk_start_end_check(self.collinear_walks[walk_to_extend], g_len)
                 block_extensions.update_extension(self.collinear_walks[walk_to_extend], graph, collinear_walk_nr=walk_to_extend)
                 old_score = self.scores[walk_to_extend]
                 if old_score.q3>PARAM_b and walk_length(self.collinear_walks[walk_to_extend], graph)>=PARAM_m:
-                    self.scores = [Score(old_score.q3, 0, 0, 0)]
+                    self.scores = [Score(old_score.q3, 0)]
                     print('Too high q3 ---> score<0')
                     return
-                self.scores[walk_to_extend] = Score(old_score.q1, 0, o_nr_on_path, len(self.carrying_path))
+                self.scores[walk_to_extend] = Score(old_score.q1, 0)
                 walks_updated_score.add(walk_to_extend)
                 
             # 3b) if such walk is not found, occurrence becomes a new collinear path (provided it is not used)
@@ -232,20 +232,20 @@ class CollinearBlock:
                 # Create extension for the new collinear walk
                 block_extensions.update_extension(self.collinear_walks[-1], graph, collinear_walk_nr=len(self.collinear_walks)-1)
                 if wi.length>=PARAM_m and self.carrying_path_length_so_far>PARAM_b:
-                    self.scores = [Score(self.carrying_path_length_so_far, 0, 0, 0)]
+                    self.scores = [Score(self.carrying_path_length_so_far, 0)]
                     print('Too high q1 ---> score<0')
                     return # We don't check any other occurrences and set block's score to -1
-                self.scores.append(Score(self.carrying_path_length_so_far, 0, o_nr_on_path, len(self.carrying_path))) # ['q1', 'q3', 'idx_g_path', 'idx_c_path']
+                self.scores.append(Score(self.carrying_path_length_so_far, 0))
                 
         # Update scores
         for w_idx in range(len(self.collinear_walks)):
             if w_idx not in walks_updated_score:
                 old_score = self.scores[w_idx]
                 if old_score.q3+wi.length>PARAM_b and walk_length(self.collinear_walks[w_idx], graph)>=PARAM_m:
-                    self.scores = [Score(old_score.q3+wi.length, 0, 0, 0)]
+                    self.scores = [Score(old_score.q3+wi.length, 0)]
                     print(f'Too high q1 ---> score<0 (walk introduced too far.)')
                     return
-                self.scores[w_idx] = Score(old_score.q1, old_score.q3+wi.length, old_score.idx_g_path, len(self.carrying_path))
+                self.scores[w_idx] = Score(old_score.q1, old_score.q3+wi.length)
                   
 class BlockExtensions:
     extensions: dict # list of extensions of type CollinearWalk
