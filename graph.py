@@ -1,5 +1,6 @@
 import os
 import re
+import math
 import json
 import random
 from collections import namedtuple
@@ -130,11 +131,12 @@ class Graph:
                     new_block.update_collinear_walks(wi, Q, self)
                     new_score = new_block.scoring_function(self)
                     new_block.carrying_path_length_so_far += self.vertices[wi.vertex].length
+                    if math.isinf(new_score):
+                        print('-INFINITY!!!!!!!!!!!!!')
+                        break
                     if new_score>best_score:
                         best_block = new_block
                         best_score = new_score
-                    elif new_score<0:
-                        break
             
             if best_score>0:
                 collinear_blocks.append(best_block)
@@ -164,8 +166,9 @@ class CollinearBlock:
             p = walk_length(walk, graph)
             if p>=PARAM_m:
                 s = self.scores[w_idx]
-                if s.q1>PARAM_b or s.q3>PARAM_b: # Probably not needed
-                    return -1
+                if s.q1>PARAM_b or s.q3>PARAM_b:
+                    print('Return -inf!!!!!!!!!!!')
+                    return -math.inf
                 score += p - (s.q1 + s.q3)**2
         return score
 
@@ -208,8 +211,8 @@ class CollinearBlock:
                 walk_start_end_check(self.collinear_walks[walk_to_extend], g_len)
                 block_extensions.update_extension(self.collinear_walks[walk_to_extend], graph, collinear_walk_nr=walk_to_extend)
                 old_score = self.scores[walk_to_extend]
-                if old_score.q3+wi.length>PARAM_b and walk_length(self.collinear_walks[walk_to_extend], graph)>=PARAM_m:
-                    self.scores = [Score(old_score.q3+wi.length, 0, 0, 0)]
+                if old_score.q3>PARAM_b and walk_length(self.collinear_walks[walk_to_extend], graph)>=PARAM_m:
+                    self.scores = [Score(old_score.q3, 0, 0, 0)]
                     print('Too high q3 ---> score<0')
                     return
                 self.scores[walk_to_extend] = Score(old_score.q1, 0, o_nr_on_path, len(self.carrying_path))
