@@ -95,7 +95,6 @@ class Graph:
         for v_idx in vertex_indices_shuffled: # select a vertex --- seed of a new CollinearBlock
             v = self.vertices[v_idx]
             collinear_seeds = [] # list to store occurrences of v not used before
-            collinear_seeds_backwards = []
             for g_idx, i in v.occurrences: # occurrences of the vertex
                 genome = self.genomes[g_idx]
                 g_path_pos = genome.path[i] # vertex index: int, orientation: int, used: bool
@@ -107,16 +106,18 @@ class Graph:
                     else:
                         orient = g_path_pos.orientation*carrying_seed_orientation
                     collinear_seeds.append(CollinearWalk(g_idx, i, i, orient))
-                    collinear_seeds_backwards.append(CollinearWalk(g_idx, i, i, -orient))
                     walk_start_end_check(collinear_seeds[-1], len(genome.path))
             if not collinear_seeds:
                 continue
             
             blocks_forward_backward = []
-            for seeds, forward_backward in zip([collinear_seeds, collinear_seeds_backwards], [1, -1]):
+            for forward_backward in [1, -1]:
                 best_score = -1
                 best_block = None
-                new_block = CollinearBlock(v_idx, seeds, carrying_seed_orientation*forward_backward)
+                if forward_backward==1:
+                    new_block = CollinearBlock(v_idx, collinear_seeds, carrying_seed_orientation)
+                else:
+                    new_block = CollinearBlock(v_idx, [CollinearWalk(s.genome, s.start, s.end, -s.orient) for s in collinear_seeds], -carrying_seed_orientation)
                 new_score = 0
                 while new_score>=0:
                     w0_idx = new_block.carrying_path[-1]
@@ -137,18 +138,24 @@ class Graph:
                         new_score = new_block.scoring_function(self)
                         new_block.carrying_path_length_so_far += self.vertices[wi.vertex].length
                         if math.isinf(new_score):
-                            print('-INFINITY!!!!!!!!!!!!!')
                             break
                         if new_score>best_score:
                             best_block = new_block
-                            best_score = new_score
+                            best_score = new_score 
+                    for s_nr, seed in enumerate(collinear_seeds):
+                        assert seed.genome==new_block.collinear_walks[s_nr].genome
+                        
                 if best_score>0:
                     blocks_forward_backward.append(best_block)
-                    # collinear_blocks.append(best_block)
-                    mark_vertices_as_used(self, best_block)
 
             if blocks_forward_backward:
-                final_block = merge_forward_backward_blocks(blocks_forward_backward, len(seeds))
+                if len(blocks_forward_backward)==2:
+                    print('Both passes')
+                for best_block in blocks_forward_backward:
+                    mark_vertices_as_used(self, best_block)
+                    for s_nr, seed in enumerate(collinear_seeds):
+                        assert seed.genome==new_block.collinear_walks[s_nr].genome
+                final_block = merge_forward_backward_blocks(blocks_forward_backward, len(collinear_seeds))
                 collinear_blocks.append(final_block)
                 
         return collinear_blocks
@@ -176,7 +183,6 @@ class CollinearBlock:
             if p>=PARAM_m:
                 s = self.scores[w_idx]
                 if s.q1>PARAM_b or s.q3>PARAM_b:
-                    print('Return -inf!!!!!!!!!!!')
                     return -math.inf
                 score += p - (s.q1 + s.q3)**2
         return score
@@ -393,23 +399,6 @@ class BlockExtensions:
                 assert self.extensions[collinear_walk_nr].end==walk.start-1, f'{self.extensions[collinear_walk_nr]=}, {walk=}, {g_len=}'
             walk_start_end_check(self.extensions[collinear_walk_nr], g_len)
 
-# def find_vertex_on_path(graph:Graph, walk:CollinearWalk, v_to_find:int, proximal=None, distal=None):
-#     '''
-#     Function searches for an occurance of vertex with index v_to_find on walk walk.
-#     The search begins at index proximal and ends at index distal of walk's genome's path.
-#     Function returns the first index found or None, if no index has been found.
-#     '''
-#     if proximal is None:
-#         proximal = walk.start if walk.orient==1 else walk.end
-#     if distal is None:
-#         distal = walk.end if walk.orient==1 else walk.start
-    
-#     genome_path = graph.genomes[walk.genome].path
-#     for i in range(proximal, distal+walk.orient):
-#         if genome_path[i].vertex==v_to_find:
-#             return i
-#     return None
-
 def find_vertex_on_path_till_b(graph:Graph, walk:CollinearWalk, v_to_find:int, proximal, distal):
     '''
     Function searches for an occurance of vertex with index v_to_find on walk walk.
@@ -434,15 +423,15 @@ def mark_vertices_as_used(graph, block):
     Functions marks vertex occurrences of CollinearBlock block as used, 
     i.e. it changes each vertex occurrence's parameter used to True.
     '''
-    nr_used = 0
+    # nr_used = 0
     for collinear_walk in block.collinear_walks:
         g_idx = collinear_walk.genome
         genome_path = graph.genomes[g_idx].path
         for i in range(collinear_walk.start, collinear_walk.end+1):
             g_path_pos = genome_path[i]
             genome_path[i] = Path(*(g_path_pos[:-2]), True, g_path_pos[-1])
-        nr_used += walk_length(collinear_walk, graph)
-    print(f'Marked as used: {nr_used}.')
+        # nr_used += walk_length(collinear_walk, graph)
+    # print(f'Marked as used: {nr_used}.')
 
 def walk_length(walk, graph, start=None, end=None):
         g_idx = walk.genome
@@ -472,7 +461,7 @@ def merge_forward_backward_blocks(block_list, nr_seeds):
         for w_idx in range(nr_seeds):
             walk_f = forward_block.collinear_walks[w_idx]
             walk_b = backward_block.collinear_walks[w_idx]
-            assert walk_f.genome==walk_b.genome, 'genome should be the same for the seed walks of forward and backward block'
+            assert walk_f.genome==walk_b.genome, f'genome should be the same for the seed walks of forward and backward block,\n {walk_f=},\n {walk_b=}'
             forward_block.collinear_walks[w_idx] = CollinearWalk(walk_f.genome, min(walk_f.start,walk_b.start), max(walk_f.end,walk_b.end), walk_f.orient)
         forward_block.collinear_walks.extend(backward_block.collinear_walks[nr_seeds:])
     return forward_block
