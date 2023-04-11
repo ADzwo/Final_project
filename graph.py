@@ -1,11 +1,11 @@
 import os
+import sys
 import re
 import math
 import json
 import random
 from collections import namedtuple
 import pandas as pd
-import numpy as np
 from datetime import date
 
 PARAM_m = 50
@@ -14,14 +14,14 @@ SORT_SEEDS = ['no', 'nr_occurrences', 'length'][2]
 assert SORT_SEEDS in {'no', 'nr_occurrences', 'length'}, f'SORT_SEEDS must be one of "no", "nr_occurrences", "length", got {SORT_SEEDS}'
 
 CollinearWalk = namedtuple('CollinearWalk', ['genome', 'start', 'end', 'orient'])
-Path = namedtuple('Path', ['vertex', 'orientation', 'used', 'length']) # length --- length of the suffix of the genome, ending at the last character of this vertex
+Path = namedtuple('Path', ['vertex', 'orientation', 'used', 'p_length']) # length --- length of the suffix of the genome, ending at the last character of this vertex
 PathFromW0 = namedtuple('ExtensionVertex', ['distance', 'walk_nr', 'w0_nr_on_path', 't_nr_on_path'])
 CarryingPathExtension = namedtuple('CarryingPathExtension', ['vertex', 'orientation'])
 occurrence = namedtuple('occurrence', ['genome', 'nr_on_path'])
 Score = namedtuple('Score', ['q1', 'q3'])
 
 class Genome:
-    path: list[namedtuple] # Path: vertex index: int, orientation: int, used: bool
+    path: list # Path: vertex index: int, orientation: int, used: bool
     
     def __init__(self, path):
         self.path = path
@@ -29,10 +29,10 @@ class Genome:
 
 class Vertex:
     length: int # length of the represented sequence
-    occurrences: list[namedtuple] # occurrence: genome index, index on its path
+    occurrences: list # occurrence: genome index, index on its path
 
     def __init__(self, length, occurrences=None):
-        self.length = length
+        self.v_length = length
         if not occurrences:
             self.occurrences = []
         else:
@@ -70,7 +70,7 @@ class Graph:
                         v_idx = vertex_name_to_idx[v_name]
                         v_orientation = 1 if vertex[-1]=='+' else -1
                         self.vertices[v_idx].add_occurrence(len(self.genomes), v_pos) # genome, nr_on_path
-                        length += self.vertices[v_idx].length
+                        length += self.vertices[v_idx].v_length
                         path.append(Path(v_idx, v_orientation, False, length))
                     genome_name_to_idx[g[1]] = len(self.genomes)
                     self.genomes.append(Genome(path))
@@ -85,14 +85,14 @@ class Graph:
         collinear_blocks = []
 
         if SORT_SEEDS=='nr_occurrences':
-            vertex_indices_shuffled = sorted(list(range(len(self.vertices))), key=lambda x: len(self.vertices[x].occurrences), reverse=True)
+            vertex_indices_order = sorted(list(range(len(self.vertices))), key=lambda x: len(self.vertices[x].occurrences), reverse=True)
         elif SORT_SEEDS=='length':
-            vertex_indices_shuffled = sorted(list(range(len(self.vertices))), key=lambda x: self.vertices[x].length, reverse=True)
+            vertex_indices_order = sorted(list(range(len(self.vertices))), key=lambda x: self.vertices[x].v_length, reverse=True)
         else:
-            vertex_indices_shuffled = list(range(len(self.vertices)))
-            random.shuffle(vertex_indices_shuffled)
+            vertex_indices_order = list(range(len(self.vertices)))
+            random.shuffle(vertex_indices_order)
         
-        for v_idx in vertex_indices_shuffled: # select a vertex --- seed of a new CollinearBlock
+        for v_idx in vertex_indices_order: # select a vertex --- seed of a new CollinearBlock
             v = self.vertices[v_idx]
             collinear_seeds = [] # list to store occurrences of v not used before
             for g_idx, i in v.occurrences: # occurrences of the vertex
@@ -136,8 +136,9 @@ class Graph:
                         new_block.carrying_path_orientations.append(wi.orientation)
                         new_block.update_collinear_walks(wi, Q, self)
                         new_score = new_block.scoring_function(self)
-                        new_block.carrying_path_length_so_far += self.vertices[wi.vertex].length
+                        new_block.carrying_path_length_so_far += self.vertices[wi.vertex].v_length
                         if math.isinf(new_score):
+                            print('-INF!!!!!!!!!')
                             break
                         if new_score>best_score:
                             best_block = new_block
@@ -162,9 +163,9 @@ class Graph:
                 
 
 class CollinearBlock:
-    carrying_path: list[int] # vertex index: int
-    carrying_path_orientations: list[int] # orientation: int
-    collinear_walks: list[namedtuple] # genome index: int,
+    carrying_path: list # vertex index: int
+    carrying_path_orientations: list # orientation: int
+    collinear_walks: list # genome index: int,
                                     # start index from genome's path: int,
                                     # end index from genome's path: int,
                                     # orientaion with respect to the path: int
@@ -226,14 +227,10 @@ class CollinearBlock:
                 walk_start_end_check(self.collinear_walks[walk_to_extend], g_len)
                 block_extensions.update_extension(self.collinear_walks[walk_to_extend], graph, collinear_walk_nr=walk_to_extend)
                 old_score = self.scores[walk_to_extend]
-                if old_score.q3>PARAM_b and walk_length(self.collinear_walks[walk_to_extend], graph)>=PARAM_m:
-                    self.scores = [Score(old_score.q3, 0)]
-                    print('Too high q3 ---> score<0')
-                    return
                 self.scores[walk_to_extend] = Score(old_score.q1, 0)
                 walks_updated_score.add(walk_to_extend)
                 
-            # 3b) if such walk is not found, occurrence becomes a new collinear path (provided it is not used)
+            # 3b) if such a walk is not found, occurrence becomes a new collinear path (provided it is not used)
             else:
                 if wi_orient_on_carrying_path is None:
                     for i, v_idx in enumerate(self.carrying_path):
@@ -246,21 +243,21 @@ class CollinearBlock:
                 walk_start_end_check(self.collinear_walks[-1], g_len)
                 # Create extension for the new collinear walk
                 block_extensions.update_extension(self.collinear_walks[-1], graph, collinear_walk_nr=len(self.collinear_walks)-1)
-                if wi.length>=PARAM_m and self.carrying_path_length_so_far>PARAM_b:
+                if wi.v_length>=PARAM_m and self.carrying_path_length_so_far>PARAM_b:
                     self.scores = [Score(self.carrying_path_length_so_far, 0)]
                     print('Too high q1 ---> score<0')
-                    return # We don't check any other occurrences and set block's score to -1
+                    return # We don't check any other occurrences and set block's score to -infty
                 self.scores.append(Score(self.carrying_path_length_so_far, 0))
                 
         # Update scores
         for w_idx in range(len(self.collinear_walks)):
             if w_idx not in walks_updated_score:
                 old_score = self.scores[w_idx]
-                if old_score.q3+wi.length>PARAM_b and walk_length(self.collinear_walks[w_idx], graph)>=PARAM_m:
-                    self.scores = [Score(old_score.q3+wi.length, 0)]
+                if old_score.q3+wi.v_length>PARAM_b and walk_length(self.collinear_walks[w_idx], graph)>=PARAM_m:
+                    self.scores = [Score(old_score.q3+wi.v_length, 0)]
                     print(f'Too high q1 ---> score<0 (walk introduced too far.)')
                     return
-                self.scores[w_idx] = Score(old_score.q1, old_score.q3+wi.length)
+                self.scores[w_idx] = Score(old_score.q1, old_score.q3+wi.v_length)
                   
 class BlockExtensions:
     extensions: dict # list of extensions of type CollinearWalk
@@ -283,7 +280,7 @@ class BlockExtensions:
                 continue
             else:
                 if collinear_walk.orient==1:
-                    to_search_from = collinear_walk.end
+                    to_search_from = collinear_walk.end # we start searching at the most distal position of the walk
                     to_end_search = g_len - 1
                 else:
                     to_search_from = collinear_walk.start
@@ -292,6 +289,8 @@ class BlockExtensions:
                 assert 0<=proximal<g_len, f'0<=proximal<genome_length is not true! {proximal=}, {g_len=}'
                 assert 0<=to_search_from<g_len, f'0<=to_search_from<genome_length is not true! {to_search_from=}, {g_len=}'
                 
+                if g_path[proximal].used==True:
+                    break
                 w0_nr_on_path = find_vertex_on_path_till_b(graph, collinear_walk, w0_idx, 
                                                            proximal=to_search_from,
                                                            distal=to_end_search) # taking the closest position to the collinear walk
@@ -301,16 +300,20 @@ class BlockExtensions:
                 if w0_nr_on_path is None: # only increase coverage
                     while True:
                         if g_path[i].used==True:
-                            if i!=proximal:
-                                i -= collinear_walk.orient
+                            i -= collinear_walk.orient
                             break
                         v_idx = g_path[i].vertex
-                        p_length += graph.vertices[v_idx].length
-                        if p_length>PARAM_b: # is it ok? (TO FIX?)
-                            if i!=proximal:
-                                i -= collinear_walk.orient
-                            break
+
                         self.coverage[v_idx] = self.coverage.get(v_idx, 0) + 1
+                        p_length += graph.vertices[v_idx].v_length
+                        if p_length>PARAM_b:
+                            break
+                        # p_length += graph.vertices[v_idx].v_length
+                        # if p_length>PARAM_b: # is it ok? (TO FIX?)
+                        #     if i!=proximal:
+                        #         i -= collinear_walk.orient
+                        #     break
+                        # self.coverage[v_idx] = self.coverage.get(v_idx, 0) + 1
                         if i in {0, g_len-1}:
                             break
                         i += collinear_walk.orient
@@ -321,12 +324,18 @@ class BlockExtensions:
                                 i -= collinear_walk.orient
                             break
                         v_idx = g_path[i].vertex
-                        p_length += graph.vertices[v_idx].length
-                        if p_length>PARAM_b: # is it ok? (TO FIX?)
-                            if i!=proximal:
-                                i -= collinear_walk.orient
-                            break
+
+                        
                         self.coverage[v_idx] = self.coverage.get(v_idx, 0) + 1
+                        p_length += graph.vertices[v_idx].v_length
+                        if p_length>PARAM_b:
+                            break
+                        # p_length += graph.vertices[v_idx].v_length
+                        # if p_length>PARAM_b: # is it ok? (TO FIX?)
+                        #     if i!=proximal:
+                        #         i -= collinear_walk.orient
+                        #     break
+                        # self.coverage[v_idx] = self.coverage.get(v_idx, 0) + 1
                         is_w0_before_v = (i-w0_nr_on_path)*collinear_walk.orient>=0
                         if is_w0_before_v:
                             distance = walk_length(CollinearWalk(g_idx, w0_nr_on_path, i, 1), graph)
@@ -376,7 +385,7 @@ class BlockExtensions:
         genome = graph.genomes[g_idx]
         g_len = len(genome.path)
         proximal = walk.end+1 if walk.orient==1 else walk.start-1
-        if proximal>=g_len or proximal<0 or genome.path[proximal].used==True or graph.vertices[genome.path[proximal].vertex].length>PARAM_b:
+        if proximal>=g_len or proximal<0 or genome.path[proximal].used==True or graph.vertices[genome.path[proximal].vertex].v_length>PARAM_b:
             if collinear_walk_nr in self.extensions:
                 del self.extensions[collinear_walk_nr]
         else:
@@ -411,7 +420,7 @@ def find_vertex_on_path_till_b(graph:Graph, walk:CollinearWalk, v_to_find:int, p
         v_idx = genome_path[i].vertex
         if genome_path[i].used==True:
             break
-        length += graph.vertices[v_idx].length
+        length += graph.vertices[v_idx].v_length
         if length>PARAM_b: # maybe change it?
             break
         if v_idx==v_to_find:
@@ -434,17 +443,17 @@ def mark_vertices_as_used(graph, block):
     # print(f'Marked as used: {nr_used}.')
 
 def walk_length(walk, graph, start=None, end=None):
-        g_idx = walk.genome
-        genome_path = graph.genomes[g_idx].path
         if start is None:
             start = walk.start
         if end is None:
             end = walk.end
         assert start <= end
+        g_idx = walk.genome
+        genome_path = graph.genomes[g_idx].path
         if start==0:
-            return genome_path[end].length
+            return genome_path[end].p_length
         else:
-            return genome_path[end].length - genome_path[start-1].length
+            return genome_path[end].p_length - genome_path[start-1].p_length
 
 def walk_start_end_check(walk, genome_length):
     assert walk.end<genome_length, f'end >= genome_length; {walk=}, {genome_length=}'
@@ -467,7 +476,7 @@ def merge_forward_backward_blocks(block_list, nr_seeds):
     return forward_block
 
 
-def save_blocks(blocks:list[CollinearWalk], graph_name, graph):
+def save_blocks(blocks:list, graph_name, graph):
     df_all = pd.DataFrame()
     walk_lengths = []
     for b_nr, block in enumerate(blocks):
@@ -487,6 +496,11 @@ def save_blocks(blocks:list[CollinearWalk], graph_name, graph):
         name = f'{graph_name}_{today}.csv'
     df_all.to_csv(f'blocks/{name}', index=False)
 
+os.chdir(sys.path[0])
+assert 'data' in os.listdir()
+for folder in ['blocks', 'vertex_name_to_idx', 'genome_name_to_idx']:
+    if not os.path.exists(folder):
+        os.mkdir(folder)
 
 nr_blocks = []
 for graph_file_path in os.listdir('data'):
