@@ -10,6 +10,7 @@ from datetime import date
 
 PARAM_m = 50
 PARAM_b = 200
+PARAM_a = 30 # abundance pruning parameter; 150 used for mice dataset in SibeliaZ paper
 SORT_SEEDS = ['no', 'nr_occurrences', 'length'][2]
 assert SORT_SEEDS in {'no', 'nr_occurrences', 'length'}, f'SORT_SEEDS must be one of "no", "nr_occurrences", "length", got {SORT_SEEDS}'
 
@@ -93,8 +94,10 @@ class Graph:
             random.shuffle(vertex_indices_order)
         
         for v_idx in vertex_indices_order: # select a vertex --- seed of a new CollinearBlock
-            # Check if junction with occ len > a! <- TO FIX
             v = self.vertices[v_idx]
+            # Check if junction with occ len > a
+            if len(v.occurrences) > PARAM_a:
+                continue
             collinear_seeds = [] # list to store occurrences of v not used before
             for g_idx, i in v.occurrences: # occurrences of the vertex
                 genome = self.genomes[g_idx]
