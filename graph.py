@@ -4,13 +4,16 @@ import re
 import math
 import json
 import random
-from collections import namedtuple
+from collections import namedtuple, defaultdict
 import pandas as pd
 from datetime import date
 
 PARAM_m = 50
 PARAM_b = 200
 PARAM_a = 30 # abundance pruning parameter; 150 used for mice dataset in SibeliaZ paper
+
+complement_dict = {'A':'T', 'C':'G', 'T':'A', 'G':'C'}
+
 SORT_SEEDS = ['no', 'nr_occurrences', 'length'][2]
 assert SORT_SEEDS in {'no', 'nr_occurrences', 'length'}, f'SORT_SEEDS must be one of "no", "nr_occurrences", "length", got {SORT_SEEDS}'
 
@@ -52,6 +55,9 @@ class Graph:
         self.genomes = []
         vertex_name_to_idx = {} # dict to save {vertex id from gfa file: index in Graph.vertices}
         genome_name_to_idx = {}
+        sequences = []
+        graph_name = re.split(r'[\.\/]', graph_file_path)[-2]
+
         # find S lines and fill vertex_name_to_idx dict 
         with open(graph_file_path,'r') as graph_file:
             for line in graph_file.readlines():
@@ -59,6 +65,10 @@ class Graph:
                     v = line.strip().split()
                     vertex_name_to_idx[v[1]] = len(self.vertices) # {name: id}
                     self.vertices.append(Vertex(len(v[2])))
+                    sequences.append(v[2]+'\n')
+        with open(f'vertex_sequences/{graph_name}.txt', 'w') as f:
+            f.writelines(sequences)
+            del sequences
         # find P lines and fill genome_name_to_idx dict 
         with open(graph_file_path,'r') as graph_file:
             for line in graph_file.readlines():
@@ -76,7 +86,6 @@ class Graph:
                     genome_name_to_idx[g[1]] = len(self.genomes)
                     self.genomes.append(Genome(path))
         # save dictionaries to .json files
-        graph_name = re.split(r'[\.\/]', graph_file_path)[-2]
         with open(f'vertex_name_to_idx/{graph_name}.json', 'w') as f:
             json.dump(vertex_name_to_idx, f)
         with open(f'genome_name_to_idx/{graph_name}.json', 'w') as f:
@@ -114,14 +123,14 @@ class Graph:
             if not collinear_seeds:
                 continue
             
-            blocks_forward_backward = []
-            for forward_backward in [1, -1]:
+            blocks_forward_backward = {}
+            for forward_backward, seeds in zip([1, -1], [collinear_seeds, [CollinearWalk(*s[:-1], -s.orient) for s in collinear_seeds]]):
                 best_score = -1
                 best_block = None
-                if forward_backward==1:
-                    new_block = CollinearBlock(v_idx, collinear_seeds, carrying_seed_orientation)
-                else:
-                    new_block = CollinearBlock(v_idx, [CollinearWalk(s.genome, s.start, s.end, -s.orient) for s in collinear_seeds], -carrying_seed_orientation)
+                new_block = CollinearBlock(v_idx, seeds.copy(), carrying_seed_orientation)
+                for walk in new_block.collinear_walks:
+                    assert self.genomes[walk.genome].path[walk.start].vertex in new_block.carrying_path, f'{self.genomes[walk.genome].path[walk.start].vertex=},\n{new_block.carrying_path=}'
+                    assert self.genomes[walk.genome].path[walk.end].vertex in new_block.carrying_path, f'{self.genomes[walk.genome].path[walk.start].vertex=},\n{self.genomes[walk.genome].path[walk.end].vertex=},\n{new_block.carrying_path=}'
                 new_score = 0
                 while new_score>=0:
                     w0_idx = new_block.carrying_path[-1]
@@ -145,12 +154,9 @@ class Graph:
                         assert seed.genome==new_block.collinear_walks[s_nr].genome
                         
                 if best_score>0:
-                    blocks_forward_backward.append(best_block)
+                    blocks_forward_backward[forward_backward] = best_block
 
             if blocks_forward_backward:
-                for best_block in blocks_forward_backward:
-                    for s_nr, seed in enumerate(collinear_seeds):
-                        assert seed.genome==new_block.collinear_walks[s_nr].genome
                 final_block = merge_forward_backward_blocks(blocks_forward_backward, len(collinear_seeds))
                 mark_vertices_as_used(self, final_block)
                 collinear_blocks.append(final_block)
@@ -214,11 +220,12 @@ class CollinearBlock:
             if walk_to_extend is not None:
                 extension = block_extensions.extensions[walk_to_extend]
                 walk = self.collinear_walks[walk_to_extend]
+                assert g_path[walk.end].vertex in self.carrying_path
+                assert g_path[walk.start].vertex in self.carrying_path
+                assert g_path[o_nr_on_path].vertex in self.carrying_path
                 if walk.orient==1:
-                    assert walk.end < o_nr_on_path
                     self.collinear_walks[walk_to_extend] = CollinearWalk(walk.genome, walk.start, o_nr_on_path, walk.orient)
                 else:
-                    assert o_nr_on_path < walk.start
                     self.collinear_walks[walk_to_extend] = CollinearWalk(walk.genome, o_nr_on_path, walk.end, walk.orient)
                 walk_start_end_check(self.collinear_walks[walk_to_extend], g_len)
                 block_extensions.update_extension(self.collinear_walks[walk_to_extend], graph, collinear_walk_nr=walk_to_extend)
@@ -235,11 +242,13 @@ class CollinearBlock:
                             break
                 occurrence_orientation = g_path[o_nr_on_path].orientation
                 orient = wi_orient_on_carrying_path * occurrence_orientation
+                assert g_path[o_nr_on_path].vertex in self.carrying_path
                 self.collinear_walks.append(CollinearWalk(g_idx, o_nr_on_path, o_nr_on_path, orient))
                 walk_start_end_check(self.collinear_walks[-1], g_len)
                 # Create extension for the new collinear walk
                 block_extensions.update_extension(self.collinear_walks[-1], graph, collinear_walk_nr=len(self.collinear_walks)-1)
                 self.scores.append(Score(self.carrying_path_length_so_far, 0))
+                walks_updated_score.add(len(self.collinear_walks)-1)
                 
         # Update scores
         for w_idx in range(len(self.collinear_walks)):
@@ -432,22 +441,99 @@ def walk_start_end_check(walk, genome_length):
     assert walk.start>=0, f'start < 0; {walk=}, {genome_length-1=}'
     assert walk.start<=walk.end, f'end < start; {walk=}'
 
-def merge_forward_backward_blocks(block_list, nr_seeds):
-    assert len(block_list)<3, 'block list should contain at most two blocks (forward and backward)'
-    if len(block_list)==1:
-        return block_list[0]
-    if len(block_list)==2:
-        forward_block = block_list[0]
-        backward_block = block_list[1]
+def merge_forward_backward_blocks(block_dict, nr_seeds):
+    assert len(block_dict)<3, 'block list should contain at most two blocks (forward and backward)'
+    if len(block_dict)==1:
+        return list(block_dict.values())[0]
+    if len(block_dict)==2:
+        forward_block = block_dict[1]
+        backward_block = block_dict[-1]
         for w_idx in range(nr_seeds):
             walk_f = forward_block.collinear_walks[w_idx]
             walk_b = backward_block.collinear_walks[w_idx]
             assert walk_f.genome==walk_b.genome, f'genome should be the same for the seed walks of forward and backward block,\n {walk_f=},\n {walk_b=}'
             forward_block.collinear_walks[w_idx] = CollinearWalk(walk_f.genome, min(walk_f.start,walk_b.start), 
                                                                  max(walk_f.end,walk_b.end), walk_f.orient)
-        forward_block.collinear_walks.extend(backward_block.collinear_walks[nr_seeds:])
+        for walk in backward_block.collinear_walks[nr_seeds:]:
+            forward_block.collinear_walks.append(CollinearWalk(*walk[:-1], -walk.orient))
+        forward_block.carrying_path = list(reversed(backward_block.carrying_path)) + forward_block.carrying_path
+        forward_block.carrying_path_orientations = list(reversed(backward_block.carrying_path_orientations)) + forward_block.carrying_path_orientations
     return forward_block
 
+
+def reverse_complement(seq):
+    seq_complement = ''
+    for s in seq[::-1]:
+        seq_complement += complement_dict[s]
+    return seq_complement
+
+class PoaVertex:
+    sequence: str # one of 'A', 'C', 'G', 'T'
+    v_idx: int
+    v_pos: int
+    next_poa_v: set
+
+    def __init__(self, sequence, v_idx, v_pos):
+        assert len(sequence)==1, f'Each vertex of POA graph should contain exactly ine character. Got {sequence}.'
+        self.sequence = sequence
+        self.v_idx = v_idx
+        self.v_pos = v_pos
+        self.next_poa_v = set()
+
+class PoaGraph:
+    def __init__(self, block, graph, sequences):
+        poa_vertices = [] # [poa_v]
+        v_idx_to_poa = defaultdict(list) # v_idx: poa_v_idx
+        poa_start = None
+        # Add carrying_path
+        for v_idx, v_orientation in zip(block.carrying_path, block.carrying_path_orientations):
+            if v_orientation==1:
+                seq = sequences[v_idx].strip()
+            else:
+                seq = reverse_complement(sequences[v_idx].strip())
+            for i, s in enumerate(seq):            
+                poa_v = PoaVertex(s, v_idx, i)
+                if poa_start is None:
+                    poa_start = poa_v
+                else:
+                    poa_v_old.next_poa_v.add(len(poa_vertices))
+                v_idx_to_poa[v_idx].append(len(poa_vertices))
+                poa_vertices.append(poa_v)
+                poa_v_old = poa_v
+        # Add collinear walks
+        for walk in block.collinear_walks:
+            g_idx = walk.genome
+            g_path = graph.genomes[g_idx].path
+            to_start = walk.start if walk.orient==1 else walk.end
+            to_end = walk.end+1 if walk.orient==1 else walk.start-1
+            for i in range(to_start, to_end):
+                # to_start is always present in POA graph, because it belongs to carrying path
+                v_idx = g_path[i].vertex
+                # define PoaVertex for each position of vertex v_idx
+                if v_idx not in v_idx_to_poa:
+                    assert i!=to_start
+                    if v_orientation==1:
+                        seq = sequences[v_idx].strip()
+                    else:
+                        seq = reverse_complement(sequences[v_idx].strip())
+                    poa_v_old_idx = v_idx_to_poa[g_path[i-1].vertex][-1]
+                    poa_v_old = poa_vertices[poa_v_old_idx]
+                    #############
+                    # TO FIX <--- Try using the existing vertices to get an alignment
+                    for s in seq:
+                        poa_v = PoaVertex(s, v_idx, i)
+                        poa_v_old.next_poa_v.add(len(poa_vertices))
+                        v_idx_to_poa[v_idx].append(len(poa_vertices))
+                        poa_vertices.append(poa_v)
+                        poa_v_old = poa_v
+                    #############
+                # add an edge to poa_v from poa_old
+                elif i!=to_start:
+                    poa_v_old_idx = v_idx_to_poa[g_path[i-1].vertex][-1]
+                    poa_v_old = poa_vertices[poa_v_old_idx]
+                    poa_v_idx = v_idx_to_poa[v_idx][0]
+                    if poa_v_idx not in poa_v_old.next_poa_v:
+                        poa_v_old.next_poa_v.add(poa_v_idx)
 
 def save_blocks(blocks:list, graph_name, graph):
     df_all = pd.DataFrame()
@@ -471,7 +557,7 @@ def save_blocks(blocks:list, graph_name, graph):
 
 os.chdir(sys.path[0])
 assert 'data' in os.listdir()
-for folder in ['blocks', 'vertex_name_to_idx', 'genome_name_to_idx']:
+for folder in ['blocks', 'vertex_name_to_idx', 'genome_name_to_idx', 'vertex_sequences']:
     if not os.path.exists(folder):
         os.mkdir(folder)
 
@@ -483,6 +569,15 @@ for graph_file_path in os.listdir('data'):
         blocks = g.find_collinear_blocks()
         nr_blocks.append(len(blocks))
         save_blocks(blocks, graph_file_path.split('.')[0], g)
+        graph_name = re.split(r'[\.\/]', graph_file_path)[-2]
+        with open(f'vertex_sequences/{graph_name}.txt') as f:
+            sequences = f.readlines()
+
+        for block in blocks:
+            for walk in block.collinear_walks:
+                assert g.genomes[walk.genome].path[walk.start].vertex in block.carrying_path, f'{g.genomes[walk.genome].path[walk.start].vertex=}'
+                assert g.genomes[walk.genome].path[walk.end].vertex in block.carrying_path, f'{g.genomes[walk.genome].path[walk.end].vertex=}'
+            PoaGraph(block, g, sequences)
 print(f'Number of blocks for consecutive options:\n{nr_blocks}')
 
 # additional check
@@ -512,7 +607,6 @@ TO FIX:
     - Po dużym kroku zapamiętać scory poszczególnych ścieżek do końca łańcucha i później doliczać tylko odtąd.
     - Budując shortest_walk w przedłużeniach: chyyyba trzeba wziąć pod uwagę 
     wszystkie wystąpienia w0 na przedłużeniu. Wtedy nie przegapimy najkrótszej drogi.
-    - Dlaczego są zapętlenia? Może trzeba sprawdzać rzeczywiście przedłużenia szukając r?
 
 Not necessary:
     Pamiętać po dużym kroku, które wierzchołki się końćzą w starym t (nowym w0).
