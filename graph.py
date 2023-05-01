@@ -277,28 +277,28 @@ class BlockExtensions:
         self.coverage = {}
         self.shortest_walk = {}
         
-        for walk_nr, collinear_walk in enumerate(collinear_walks):
-            g_idx = collinear_walk.genome
+        for walk_nr, walk in enumerate(collinear_walks):
+            g_idx = walk.genome
             g_path = graph.genomes[g_idx].path
             g_len = len(g_path)
-            if collinear_walk.orient==1 and collinear_walk.end==g_len-1: # if we've reached the end of the genome
+            if walk.orient==1 and walk.end==g_len-1: # if we've reached the end of the genome
                 continue
-            elif collinear_walk.orient==-1 and collinear_walk.start==0:
+            elif walk.orient==-1 and walk.start==0:
                 continue
             else:
-                if collinear_walk.orient==1:
-                    to_search_from = collinear_walk.end # we start searching at the most distal position of the walk
+                if walk.orient==1:
+                    to_search_from = walk.end # we start searching at the most distal position of the walk
                     to_end_search = g_len - 1
                 else:
-                    to_search_from = collinear_walk.start
+                    to_search_from = walk.start
                     to_end_search = 0
-                proximal = to_search_from + collinear_walk.orient # proximal - the end of extension proximal to the collinear walk
+                proximal = to_search_from + walk.orient # proximal - the end of extension proximal to the collinear walk
                 assert 0<=proximal<g_len, f'0<=proximal<genome_length is not true! {proximal=}, {g_len=}'
                 assert 0<=to_search_from<g_len, f'0<=to_search_from<genome_length is not true! {to_search_from=}, {g_len=}'
                 
                 if g_path[proximal].used==True:
                     break
-                w0_nr_on_path = find_vertex_on_path_till_b(graph, collinear_walk, w0_idx, 
+                w0_nr_on_path = find_vertex_on_path_till_b(graph, walk, w0_idx, 
                                                            proximal=to_search_from,
                                                            distal=to_end_search) # taking the closest position to the collinear walk
                                 # Shouldn't we take all relevant occurrences of w0? <--- TO FIX?
@@ -307,7 +307,7 @@ class BlockExtensions:
                 if w0_nr_on_path is None: # only increase coverage
                     while True:
                         if g_path[i].used==True:
-                            i -= collinear_walk.orient
+                            i -= walk.orient
                             break
                         v_idx = g_path[i].vertex
                         self.coverage[v_idx] = self.coverage.get(v_idx, 0) + 1
@@ -316,32 +316,32 @@ class BlockExtensions:
                             break
                         if i in {0, g_len-1}:
                             break
-                        i += collinear_walk.orient
+                        i += walk.orient
                 else:
                     while True:
                         if g_path[i].used==True:
-                            i -= collinear_walk.orient
+                            i -= walk.orient
                             break
                         v_idx = g_path[i].vertex
                         self.coverage[v_idx] = self.coverage.get(v_idx, 0) + 1
                         p_length += graph.vertices[v_idx].v_length
                         if p_length>=PARAM_b:
                             break
-                        is_w0_before_v = ((i-w0_nr_on_path)*collinear_walk.orient) > 0
+                        is_w0_before_v = ((i-w0_nr_on_path)*walk.orient) > 0
                         if is_w0_before_v:
-                            distance = walk_length(CollinearWalk(g_idx, w0_nr_on_path, i, 1), graph)
+                            distance = walk_length(CollinearWalk(g_idx, min(w0_nr_on_path,i), max(w0_nr_on_path,i), 1), graph)
                             if v_idx not in self.shortest_walk or self.shortest_walk[v_idx].distance>distance:
-                                self.shortest_walk[v_idx] = PathFromW0(distance, walk_nr, w0_nr_on_path+collinear_walk.orient, i)
+                                self.shortest_walk[v_idx] = PathFromW0(distance, walk_nr, w0_nr_on_path+walk.orient, i)
                                 assert self.shortest_walk[v_idx].w0_nr_on_path<g_len, f'{self.shortest_walk[v_idx].w0_nr_on_path=}, {g_len=}'
                                 assert self.shortest_walk[v_idx].t_nr_on_path<g_len, f'{self.shortest_walk[v_idx].t_nr_on_path=}, {g_len=}'
                         if i in {0, g_len-1}:
                             break
-                        i += collinear_walk.orient # going forwards or backwards on the genome
-            self.extensions[walk_nr] = CollinearWalk(g_idx, min(proximal, i), max(proximal, i), collinear_walk.orient)
-            if collinear_walk.orient==1:
-                assert self.extensions[walk_nr].start==collinear_walk.end+1, f'{self.extensions[walk_nr]=}, {collinear_walk=}, {g_len=}'
+                        i += walk.orient # going forwards or backwards on the genome
+            self.extensions[walk_nr] = CollinearWalk(g_idx, min(proximal, i), max(proximal, i), walk.orient)
+            if walk.orient==1:
+                assert self.extensions[walk_nr].start==walk.end+1, f'{self.extensions[walk_nr]=}, {walk=}, {g_len=}'
             else:
-                assert self.extensions[walk_nr].end==collinear_walk.start-1, f'{self.extensions[walk_nr]=}, {collinear_walk=}, {g_len=}'
+                assert self.extensions[walk_nr].end==walk.start-1, f'{self.extensions[walk_nr]=}, {walk=}, {g_len=}'
             walk_start_end_check(self.extensions[walk_nr], g_len)
 
     
@@ -364,7 +364,7 @@ class BlockExtensions:
         r = []
         walk = collinear_walks[w0_to_t.walk_nr] 
         genome = graph.genomes[walk.genome]
-        for i in range(w0_to_t.w0_nr_on_path+walk.orient, w0_to_t.t_nr_on_path+walk.orient):
+        for i in range(w0_to_t.w0_nr_on_path+walk.orient, w0_to_t.t_nr_on_path+walk.orient, walk.orient):
             g_path_pos = genome.path[i]
             r.append(CarryingPathExtension(g_path_pos.vertex, g_path_pos.orientation*walk.orient))
         return r
@@ -409,7 +409,7 @@ def find_vertex_on_path_till_b(graph:Graph, walk:CollinearWalk, v_to_find:int, p
     length = 0
     # nr_on_path = None
     assert (distal-proximal)*walk.orient>=0
-    for i in range(proximal, distal+walk.orient):
+    for i in range(proximal, distal+walk.orient, walk.orient):
         v_idx = genome_path[i].vertex
         if genome_path[i].used==True:
             break
@@ -721,7 +721,7 @@ for graph_file_path in os.listdir('data'):
             for walk in block.collinear_walks:
                 assert graph.genomes[walk.genome].path[walk.start].vertex in block.carrying_path, f'{graph.genomes[walk.genome].path[walk.start].vertex=}'
                 assert graph.genomes[walk.genome].path[walk.end].vertex in block.carrying_path, f'{graph.genomes[walk.genome].path[walk.end].vertex=}'
-            PoaGraph(block, graph, sequences, match=5, gap=-1, mismatch=-2)
+            # PoaGraph(block, graph, sequences, match=5, gap=-1, mismatch=-2)
 print(f'Number of blocks for consecutive options:\n{nr_blocks}')
 
 # additional check
