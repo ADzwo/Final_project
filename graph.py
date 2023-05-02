@@ -8,6 +8,7 @@ from collections import namedtuple, defaultdict
 import pandas as pd
 import numpy as np
 from datetime import date
+import copy
 
 PARAM_m = 50
 PARAM_b = 200
@@ -128,7 +129,7 @@ class Graph:
             for forward_backward, seeds in zip([1, -1], [collinear_seeds, [CollinearWalk(*s[:-1], -s.orient) for s in collinear_seeds]]):
                 best_score = -1
                 best_block = None
-                new_block = CollinearBlock(v_idx, seeds.copy(), carrying_seed_orientation)
+                new_block = CollinearBlock(v_idx, copy.copy(seeds), carrying_seed_orientation)
                 for walk in new_block.collinear_walks:
                     assert self.genomes[walk.genome].path[walk.start].vertex in new_block.carrying_path, f'{self.genomes[walk.genome].path[walk.start].vertex=},\n{new_block.carrying_path=}'
                     assert self.genomes[walk.genome].path[walk.end].vertex in new_block.carrying_path, f'{self.genomes[walk.genome].path[walk.start].vertex=},\n{self.genomes[walk.genome].path[walk.end].vertex=},\n{new_block.carrying_path=}'
@@ -150,13 +151,13 @@ class Graph:
                             print('-INF!!!!!!!!!')
                             break
                         if new_score>best_score:
-                            best_block = new_block
+                            best_block = copy.copy(new_block)
                             best_score = new_score 
                     for s_nr, seed in enumerate(collinear_seeds):
                         assert seed.genome==new_block.collinear_walks[s_nr].genome
                         
                 if best_score>0:
-                    blocks_forward_backward[forward_backward] = best_block
+                    blocks_forward_backward[forward_backward] = copy.copy(best_block)
 
             if blocks_forward_backward:
                 final_block = merge_forward_backward_blocks(blocks_forward_backward, len(collinear_seeds))
@@ -240,7 +241,9 @@ class CollinearBlock:
                 old_score = self.scores[walk_to_extend]
                 self.scores[walk_to_extend] = Score(old_score.q1, 0)
                 walks_updated_score.add(walk_to_extend)
+                assert self.match_carrying[walk_to_extend][-1][0]<=len(self.carrying_path)-1, 'Carrying path idx in match_carrying should be increasing'
                 self.match_carrying[walk_to_extend].append((len(self.carrying_path)-1, o_nr_on_path))
+                assert self.collinear_walks[walk_to_extend].start<=self.match_carrying[walk_to_extend][-1][1]<=self.collinear_walks[walk_to_extend].end, f'{self.collinear_walks[walk_to_extend].start=}, {self.match_carrying[walk_to_extend][1]=}, {self.collinear_walks[walk_to_extend].end=}'
                 
             # 3b) if such a walk is not found, occurrence becomes a new collinear path (provided it is not used)
             else:
@@ -259,6 +262,7 @@ class CollinearBlock:
                 self.scores.append(Score(self.carrying_path_length_so_far, 0))
                 walks_updated_score.add(len(self.collinear_walks)-1)
                 self.match_carrying.append([(len(self.carrying_path)-1, o_nr_on_path)])
+                assert self.collinear_walks[-1].start<=self.match_carrying[-1][0][1]<=self.collinear_walks[-1].end
                 
         # Update scores
         for w_idx in range(len(self.collinear_walks)):
@@ -458,16 +462,47 @@ def merge_forward_backward_blocks(block_dict, nr_seeds):
     if len(block_dict)==2:
         forward_block = block_dict[1]
         backward_block = block_dict[-1]
+        carrying_b = backward_block.carrying_path
+        
+        for w_idx in range(len(forward_block.collinear_walks)):
+            assert forward_block.match_carrying[w_idx][0][1] in {forward_block.collinear_walks[w_idx].start, forward_block.collinear_walks[w_idx].end}, f'{forward_block.match_carrying[w_idx][0]=}, {forward_block.collinear_walks[w_idx]=}'
+            assert forward_block.match_carrying[w_idx][-1][1] in {forward_block.collinear_walks[w_idx].start, forward_block.collinear_walks[w_idx].end}, f'{forward_block.match_carrying[w_idx][-1]=}, {forward_block.collinear_walks[w_idx]=}'
+        for w_idx in range(len(backward_block.collinear_walks)):
+            assert backward_block.match_carrying[w_idx][0][1] in {backward_block.collinear_walks[w_idx].start, backward_block.collinear_walks[w_idx].end}, f'{backward_block.match_carrying[w_idx][0]=}, {backward_block.collinear_walks[w_idx]=}'
+            assert backward_block.match_carrying[w_idx][-1][1] in {backward_block.collinear_walks[w_idx].start, backward_block.collinear_walks[w_idx].end}, f'{backward_block.match_carrying[w_idx][-1]=}, {backward_block.collinear_walks[w_idx]=}'
+        
         for w_idx in range(nr_seeds):
             walk_f = forward_block.collinear_walks[w_idx]
             walk_b = backward_block.collinear_walks[w_idx]
             assert walk_f.genome==walk_b.genome, f'genome should be the same for the seed walks of forward and backward block,\n {walk_f=},\n {walk_b=}'
             forward_block.collinear_walks[w_idx] = CollinearWalk(walk_f.genome, min(walk_f.start,walk_b.start), 
                                                                  max(walk_f.end,walk_b.end), walk_f.orient)
+            matches_f = forward_block.match_carrying[w_idx]
+            matches_b = backward_block.match_carrying[w_idx]
+            assert [(-m[0]+len(carrying_b), m[1]) for m in list(reversed(matches_b))][-1][0]==[(m[0]+len(carrying_b), m[1]) for m in matches_f][0][0]
+            assert [(-m[0]+len(carrying_b), m[1]) for m in list(reversed(matches_b))][-1][1]==[(m[0]+len(carrying_b), m[1]) for m in matches_f][0][1]
+            forward_block.match_carrying[w_idx] = [(-m[0]+len(carrying_b), m[1]) for m in list(reversed(matches_b))[:-1]] + [(m[0]+len(carrying_b), m[1]) for m in matches_f]
+            assert forward_block.match_carrying[w_idx][0][1] in {forward_block.collinear_walks[w_idx].start, forward_block.collinear_walks[w_idx].end}, f'{forward_block.match_carrying[w_idx][0]=}, {forward_block.collinear_walks[w_idx]=}, {nr_seeds=}, {w_idx=}'
+            assert forward_block.match_carrying[w_idx][-1][1] in {forward_block.collinear_walks[w_idx].start, forward_block.collinear_walks[w_idx].end}, f'{forward_block.match_carrying[w_idx][-1]=}, {forward_block.collinear_walks[w_idx]=}'
+        
+        # merge the remaining elements of match_carrying
+        for w_idx, matches in enumerate(forward_block.match_carrying[nr_seeds:]):
+            forward_block.match_carrying[w_idx+nr_seeds] = [(m[0]+len(carrying_b), m[1]) for m in matches]
+        for matches in backward_block.match_carrying[nr_seeds:]:
+            forward_block.match_carrying.append([(-m[0]+len(carrying_b), m[1]) for m in list(reversed(matches))])
+
+        # merge the remaining walks
         for walk in backward_block.collinear_walks[nr_seeds:]:
             forward_block.collinear_walks.append(CollinearWalk(*walk[:-1], -walk.orient))
-        forward_block.carrying_path = list(reversed(backward_block.carrying_path)) + forward_block.carrying_path
+
+        for w_idx in range(len(forward_block.collinear_walks)):
+            assert forward_block.match_carrying[w_idx][0][1] in {forward_block.collinear_walks[w_idx].start, forward_block.collinear_walks[w_idx].end}, f'{forward_block.match_carrying[w_idx][0]=}, {forward_block.collinear_walks[w_idx]=}, {nr_seeds=}, {w_idx=}'
+            assert forward_block.match_carrying[w_idx][-1][1] in {forward_block.collinear_walks[w_idx].start, forward_block.collinear_walks[w_idx].end}, f'{forward_block.match_carrying[w_idx][-1]=}, {forward_block.collinear_walks[w_idx]=}'
+        
+        # merge carrying paths and their orientations
+        forward_block.carrying_path = list(reversed(carrying_b)) + forward_block.carrying_path
         forward_block.carrying_path_orientations = list(reversed(backward_block.carrying_path_orientations)) + forward_block.carrying_path_orientations
+        
     return forward_block
 
 
@@ -482,16 +517,17 @@ class PoaVertex:
     v_idx: int
     v_pos: int
     next_poa: set # set of poa vertex indices
-    walks: dict # {w_idx: index on walk.genome}
+    walks: dict # {w_idx: position_on_walk}
+    is_on_carrying: bool
 
-    def __init__(self, sequence, v_idx, v_pos):
+    def __init__(self, sequence, v_idx, v_pos, is_on_carrying=False):
         assert len(sequence)==1, f'Each vertex of POA graph should contain exactly ine character. Got {sequence}.'
         self.sequence = sequence
         self.v_idx = v_idx
         self.v_pos = v_pos
         self.next_poa = set()
         self.walks = {}
-        self.score_column = list
+        self.is_on_carrying = is_on_carrying
 
 class PoaGraph:
     poa_vertices: list # list of poa vertices
@@ -516,45 +552,51 @@ class PoaGraph:
         
         # Add carrying_path
         poa_v_old = None
-        for v_idx, v_orientation in zip(block.carrying_path, block.carrying_path_orientations):
+        for v_nr, (v_idx, v_orientation) in enumerate(zip(block.carrying_path, block.carrying_path_orientations)):
             if v_orientation==1:
                 seq = sequences[v_idx].strip()
             else:
                 seq = reverse_complement(sequences[v_idx].strip())
             for i, s in enumerate(seq):            
-                poa_v = PoaVertex(s, v_idx, i)
+                poa_v = PoaVertex(s, v_idx, i, is_on_carrying=True)
                 if poa_v_old is not None:
                     poa_v_old.next_poa.add(len(self.poa_vertices))
-                self.carrying_to_poa[i].append(len(self.poa_vertices))
+                self.carrying_to_poa[v_nr].append(len(self.poa_vertices))
                 self.poa_vertices.append(poa_v)
                 poa_v_old = poa_v
+        assert len(self.poa_vertices)==sum([graph.vertices[v_idx].v_length for v_idx in block.carrying_path]), f'{len(self.poa_vertices)=},\n{sum([graph.vertices[v_idx].v_length for v_idx in block.carrying_path])}'
 
         for w_idx in range(len(block.collinear_walks)):
+            print(f'ADD WALK {w_idx} TO POA GRAPH')
             self.add_collinear_walk(block, graph, w_idx)
 
     def add_collinear_walk(self, block, graph, w_idx):        
         # Add a collinear walk
         walk = block.collinear_walks[w_idx]
         matches = block.match_carrying[w_idx]
-        
-        to_start = walk.start+1 if walk.orient==1 else walk.end-1 # end and beginning of each walk are already in the graph
+
+        to_start = walk.start if walk.orient==1 else walk.end # end and beginning of each walk
         to_end = walk.end+1 if walk.orient==1 else walk.start-1
         g_path = graph.genomes[walk.genome].path
 
-        poa_idx_old = self.carrying_to_poa[0][-1]
-        i_on_g_path = to_start
-        i_on_match = 1
-        w_len_aligned = 0
+        poa_idx_old = self.carrying_to_poa[matches[0][0]][0] # first poa vertex common for carrying path and walk
+        self.poa_vertices[poa_idx_old].walks[w_idx] = 0
+        w_len_aligned = 1 #graph.vertices[block.carrying_path[0]].v_length
+
+        # print(f'{matches=}')
+        i_on_match = 0
         seq = ''
-        while i_on_g_path!=to_end: # to_end does not belong to walk
+        for i_on_g_path in range(to_start, to_end, walk.orient): # to_end does not belong to walk
+            # print(f'{i_on_g_path=}')
             v_idx = g_path[i_on_g_path].vertex
+            assert i_on_match<len(matches), f'{i_on_match=}, {len(matches)=}'
             if matches[i_on_match][1]!=i_on_g_path: # there is no match on this position of walk
                 if walk.orient*g_path[i_on_g_path].orientation==1:
                     seq += sequences[v_idx].strip()
                 else:
                     seq += reverse_complement(sequences[v_idx].strip())
             elif seq=='': # there is a match and we do not need to align anything
-                self.poa_vertices[poa_idx_old].add(self.carrying_to_poa[matches[i_on_match][0]][0])
+                self.poa_vertices[poa_idx_old].next_poa.add(self.carrying_to_poa[matches[i_on_match][0]][0])
                 for poa_idx in self.carrying_to_poa[matches[i_on_match][0]]: # poa_idx representing this position on carrying path
                     poa_v = self.poa_vertices[poa_idx]
                     poa_v.walks[w_idx] = w_len_aligned
@@ -562,37 +604,50 @@ class PoaGraph:
                 poa_idx_old = poa_idx
                 i_on_match += 1
             else:
+                # print(f'{i_on_match=}')
                 match_from = matches[i_on_match-1]
                 match_to = matches[i_on_match]
                 collinear_from = match_from[1]
                 collinear_to = match_to[1]
+                # print(f'{collinear_from=}, {collinear_to=}')
+                # print(f'{self.carrying_to_poa[match_from[0]]=}, {self.carrying_to_poa[match_to[0]]=}')
+                assert match_from[0]<=match_to[0], f'{match_from=}, {match_to=}'
                 poa_idx_from = self.carrying_to_poa[match_from[0]][-1] # last match
                 poa_idx_to = self.carrying_to_poa[match_to[0]][0] # next match
                 w_len_aligned += len(seq)
-                print(f'{poa_idx_from=}, {poa_idx_to=}')
-                poa_idx_old = self.align_to_graph(seq, w_idx, poa_idx_from, poa_idx_to, w_len_aligned, collinear_from, collinear_to, graph)
+                assert match_from[0]==match_to[0] or poa_idx_from<=poa_idx_to, f'{match_from[0]=}, {match_to[0]=}, {poa_idx_from=}, {poa_idx_to=}'
+                # print(f'{poa_idx_from=}, {poa_idx_to=}')
+
+                if match_from[0]==match_to[0] or poa_idx_to-poa_idx_from<2:
+                    # print('poa_idx_from+1==poa_idx_to')
+                    poa_v_old = self.poa_vertices[poa_idx_old]
+                    for i, s in enumerate(seq):            
+                        poa_v = PoaVertex(s, v_idx, i)
+                        poa_v_old.next_poa.add(len(self.poa_vertices))
+                        self.poa_vertices.append(poa_v)
+                        poa_v_old = poa_v
+                    poa_idx_old = len(self.poa_vertices) - 1
+                else:
+                    poa_idx_old = self.align_to_graph(seq, w_idx, poa_idx_from, poa_idx_to, w_len_aligned, collinear_from, collinear_to, graph)
                 seq = ''
-                # w_len_aligned += len(self.carrying_to_poa[match_to[0]])
-                # poa_idx_old = poa_idx_to
-                # i_on_match += 1
-            i_on_g_path += walk.orient
 
     def align_to_graph(self, seq, w_idx, poa_idx_from, poa_idx_to, w_len_aligned, collinear_from, collinear_to, graph):
         w_align_to = set(self.poa_vertices[poa_idx_from].walks.keys()).intersection(set(self.poa_vertices[poa_idx_to].walks.keys()))
         
         self.score_columns[poa_idx_from] = np.arange(len(seq)+1) * self.gap
         self.forward_steps(poa_idx_from, poa_idx_to, w_align_to, seq)
-        self.backtracking(w_idx, seq, poa_idx_to, w_len_aligned, collinear_from, collinear_to, graph)
+        last_poa_idx_aligned = self.backtracking(w_idx, seq, poa_idx_from, poa_idx_to, w_len_aligned, collinear_from, collinear_to, graph)
 
         self.align_end = []
         self.score_columns = {}
         self.score_sources = {}
+        return last_poa_idx_aligned
     
     def update_alignment_score(self, poa_idx, poa_idx_next, seq):
         scores = self.score_columns[poa_idx]
-        score_column = np.zeros(len(seq)+1)
+        score_column = np.zeros(len(seq)+1, dtype=int)
         score_column[0] = scores[0] + self.gap
-        score_sources = np.zeros((len(seq)+1, 3))
+        score_sources = np.zeros((len(seq)+1, 3), dtype=int)
         score_sources[0,:] = (-1, 0, poa_idx)
         poa_next = self.poa_vertices[poa_idx_next]
         for i in range(len(seq)):
@@ -610,8 +665,10 @@ class PoaGraph:
 
         if poa_idx_next in self.score_columns:
             self.score_columns[poa_idx_next] = np.maximum(self.score_columns[poa_idx_next], score_column)
-            self.score_sources[poa_idx_next] = np.where(self.score_columns[poa_idx_next]>score_column, 
+            self.score_sources[poa_idx_next] = np.where(np.repeat(np.expand_dims(self.score_columns[poa_idx_next]>score_column, axis=1), 3, axis=1), 
                                                         self.score_sources[poa_idx_next], score_sources)
+            for booleans in np.repeat(np.expand_dims(self.score_columns[poa_idx_next]>score_column, axis=1), 3, axis=1):
+                assert booleans[0]==booleans[1]==booleans[2], f'{booleans[0]}, {booleans[1]}, {booleans[2]}'
         else:
             self.score_columns[poa_idx_next] = score_column
             self.score_sources[poa_idx_next] = score_sources
@@ -619,62 +676,85 @@ class PoaGraph:
         assert len(self.score_columns[poa_idx_next]) == len(self.score_columns[poa_idx])
           
 
-    def forward_steps(self, poa_idx_from, poa_idx_to, w_align_to, seq):
-        poa_idx = poa_idx_from
+    def forward_steps(self, poa_idx, poa_idx_to, w_align_to, seq):
+        # print(f'forward_steps, {poa_idx=}')
         for poa_idx_next in self.poa_vertices[poa_idx].next_poa:
-            poa_next = self.poa_vertices[poa_idx_next]
             if poa_idx_next==poa_idx_to:
+                # print('APPENDING TO poa_graph.align_end')
                 self.align_end.append(poa_idx)
                 continue
-            if len(poa_next.walks)==0 or len(set(poa_next.walks.keys()).intersection(w_align_to))>0:
+            if poa_idx_next==poa_idx:
+                continue
+            poa_next = self.poa_vertices[poa_idx_next]
+            if poa_next.is_on_carrying or len(set(poa_next.walks.keys()).intersection(w_align_to))>0:
+                # print('update_alignment_score')
                 self.update_alignment_score(poa_idx, poa_idx_next, seq)
                 self.forward_steps(poa_idx_next, poa_idx_to, w_align_to, seq)
 
-    def backtracking(self, w_idx, seq, poa_idx_to, w_len_aligned, collinear_from, collinear_to, graph):
-        # w_len_aligned is already after adding len(seq)
 
+    def backtracking(self, w_idx, seq, poa_idx_from, poa_idx_to, w_len_aligned, collinear_from, collinear_to, graph):
+        # w_len_aligned is already after adding len(seq)
+        # print('BACKTRACKING')
         g_path = graph.genomes[block.collinear_walks[w_idx].genome].path
         w_orient = block.collinear_walks[w_idx].orient
         
         row = -1
         first_iteration = True
-        for collinear_pos in range(collinear_to+w_orient, collinear_from, -w_orient):
+        for collinear_pos in range(collinear_to-w_orient, collinear_from, -w_orient):
+            # print(f'{collinear_pos=}, {collinear_to-w_orient=}, {collinear_from=}')
             v_idx = g_path[collinear_pos].vertex
             v_len = graph.vertices[v_idx].v_length
             for poa_pos_on_v in range(v_len-1, -1, -1):
                 if first_iteration:
-                    poa_idx = poa_idx_to
-                    # self.poa_vertices[poa_idx].walks[w_idx] = w_len_aligned
-                    print(f'{self.align_end=}')
-                    pred_idx = self.align_end[np.argmax([self.score_columns[poa_idx][-1] for poa_idx in self.align_end])]
-                    last_poa_idx_aligned = pred_idx
+                    # print(f'{self.align_end=}')
+                    graph_poa_idx = self.align_end[np.argmax([self.score_columns[poa_idx][-1] for poa_idx in self.align_end])]
+                    walk_idx = poa_idx_to
+                    walk_poa_v = self.poa_vertices[walk_idx]
+                    last_poa_idx_aligned = graph_poa_idx
                     first_iteration = False
-                else:
-                    poa_idx = pred_idx
-                    pred_idx = self.score_sources[poa_idx][row][-1]
-
-                source = self.score_sources[poa_idx][row][:-1]
-                if source==(0, -1): # insertion in the new walk
-                    self.poa_vertices.append(PoaVertex(seq[row], v_idx, poa_pos_on_v))
-                    predecessor = self.poa_vertices[-1]
-                    predecessor.next_poa.add(poa_idx)
-                    predecessor.walks[w_idx] = w_len_aligned + row
-                elif source==(-1, 0): # gap
-                    predecessor = self.poa_vertices[pred_idx]
+                # print(f'{walk_idx=}, {graph_poa_idx=}, {row=}, {len(seq)=}')
+                # print(f'{[k for k in self.score_sources]=}')
+                # print(f'{self.score_sources[graph_poa_idx][row]=}')
+                source = self.score_sources[graph_poa_idx][row][:-1] # go to the optimal previous column
+                if source[0]==0 and source[1]==-1: # insertion in the new walk
+                    self.poa_vertices.append(PoaVertex(seq[row], v_idx, poa_pos_on_v)) # create a new PoaVertex
+                    walk_poa_v = self.poa_vertices[-1]
+                    walk_poa_v.next_poa.add(walk_idx) # add old walk_idx as a next poa vertex
+                    walk_poa_v.walks[w_idx] = w_len_aligned + row # upadate attribute walks
+                    walk_idx = len(self.poa_vertices) - 1 # update walk_idx
+                elif source[0]==-1 and source[1]==0: # gap
+                    graph_poa_idx = self.score_sources[graph_poa_idx][row][-1] # go to the optimal previous poa vertex
                 else: # match or mismatch
-                    if seq[row]==self.poa_vertices[poa_idx].sequence: # match
-                        predecessor = self.poa_vertices[pred_idx]
+                    if seq[row]==self.poa_vertices[graph_poa_idx].sequence: # match
+                        graph_poa_idx = self.score_sources[graph_poa_idx][row][-1] # go to the optimal previous poa vertex
+                        old_walk_idx = walk_idx # remember the old walk_idx
+                        walk_idx = graph_poa_idx # update the poa vertex index on walk
                     else: # mismatch
+                        graph_poa_idx = self.score_sources[graph_poa_idx][row][-1] # go to the optimal previous poa vertex
+                        self.poa_vertices.append(PoaVertex(seq[row], v_idx, poa_pos_on_v)) # create a new PoaVertex
+                        old_walk_idx = walk_idx # remember the old walk_idx
+                        walk_idx = len(self.poa_vertices) - 1 # update walk_idx
+                    walk_poa_v = self.poa_vertices[old_walk_idx] # add old walk_idx as a next poa vertex
+                    walk_poa_v.next_poa.add(old_walk_idx)
+                    walk_poa_v.walks[w_idx] = w_len_aligned + row # upadate attribute walks
+
+                if graph_poa_idx==poa_idx_from:
+                    while row!=-len(seq):
                         self.poa_vertices.append(PoaVertex(seq[row], v_idx, poa_pos_on_v))
-                        predecessor = self.poa_vertices[-1]
-                    predecessor.next_poa.add(poa_idx)
-                    predecessor.walks[w_idx] = w_len_aligned + row
-                
+                        walk_poa_v = self.poa_vertices[-1]
+                        walk_poa_v.next_poa.add(walk_idx)
+                        walk_poa_v.walks[w_idx] = w_len_aligned + row
+                        walk_idx = len(self.poa_vertices) - 1
+                        row -= 1
+                    return last_poa_idx_aligned
+
                 row += source[1]
-        print(f'{first_iteration=}')
-        print(f'{collinear_to+w_orient=}, {collinear_from=}, {w_orient}')
-        print(f'{collinear_pos=}')
-        print(f'{v_len-1=}')
+            
+
+        # print(f'{first_iteration=}')
+        # print(f'{collinear_to+w_orient=}, {collinear_from=}, {w_orient}')
+        # print(f'{collinear_pos=}')
+        # print(f'{v_len-1=}')
         return last_poa_idx_aligned
 
                     
@@ -717,11 +797,12 @@ for graph_file_path in os.listdir('data'):
         with open(f'vertex_sequences/{graph_name}.txt') as f:
             sequences = f.readlines()
 
-        for block in blocks:
+        for block_nr, block in enumerate(blocks):
+            print(f'BLOCK NR {block_nr}')
             for walk in block.collinear_walks:
                 assert graph.genomes[walk.genome].path[walk.start].vertex in block.carrying_path, f'{graph.genomes[walk.genome].path[walk.start].vertex=}'
                 assert graph.genomes[walk.genome].path[walk.end].vertex in block.carrying_path, f'{graph.genomes[walk.genome].path[walk.end].vertex=}'
-            # PoaGraph(block, graph, sequences, match=5, gap=-1, mismatch=-2)
+            PoaGraph(block, graph, sequences, match=5, gap=-1, mismatch=-2)
 print(f'Number of blocks for consecutive options:\n{nr_blocks}')
 
 # additional check
@@ -733,6 +814,16 @@ for graph_file_path in os.listdir('data'):
         blocks = graph.find_collinear_blocks()
         nr_blocks.append(len(blocks))
         save_blocks(blocks, graph_file_path.split('.')[0], graph)
+        graph_name = re.split(r'[\.\/]', graph_file_path)[-2]
+        with open(f'vertex_sequences/{graph_name}.txt') as f:
+            sequences = f.readlines()
+
+        for block_nr, block in enumerate(blocks):
+            print(f'BLOCK NR {block_nr}')
+            for walk in block.collinear_walks:
+                assert graph.genomes[walk.genome].path[walk.start].vertex in block.carrying_path, f'{graph.genomes[walk.genome].path[walk.start].vertex=}'
+                assert graph.genomes[walk.genome].path[walk.end].vertex in block.carrying_path, f'{graph.genomes[walk.genome].path[walk.end].vertex=}'
+            PoaGraph(block, graph, sequences, match=5, gap=-1, mismatch=-2)
 print(f'Number of blocks for consecutive options:\n{nr_blocks}')
 
 
