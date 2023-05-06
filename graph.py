@@ -9,6 +9,8 @@ import pandas as pd
 import numpy as np
 from datetime import date
 import copy
+import networkx as nx
+from matplotlib import pyplot as plt
 
 PARAM_m = 50
 PARAM_b = 200
@@ -538,6 +540,7 @@ class PoaGraph:
     match: int
     gap: int
     mismatch: int
+    nr_walks: int
 
     def __init__(self, block, graph, sequences, match, gap, mismatch):
         self.poa_vertices = [] 
@@ -549,6 +552,7 @@ class PoaGraph:
         self.gap = gap
         self.match = match
         self.mismatch = mismatch
+        self.nr_walks = len(block.collinear_walks)
         
         # Add carrying_path
         poa_v_old = None
@@ -749,13 +753,26 @@ class PoaGraph:
                     return last_poa_idx_aligned
 
                 row += source[1]
-            
-
         # print(f'{first_iteration=}')
         # print(f'{collinear_to+w_orient=}, {collinear_from=}, {w_orient}')
         # print(f'{collinear_pos=}')
         # print(f'{v_len-1=}')
         return last_poa_idx_aligned
+    
+    def visualize(self, path_to_image):
+        poa_graph_nx = nx.DiGraph()
+        poa_graph_nx.add_nodes_from([(poa_idx, {'sequence':poa_v.sequence}) for poa_idx, poa_v in enumerate(self.poa_vertices)])
+        for poa_idx, poa_v in enumerate(self.poa_vertices):
+            for poa_next_idx in poa_v.next_poa:
+                poa_graph_nx.add_edge(poa_idx, poa_next_idx)
+        nx.draw(poa_graph_nx, with_labels=True, font_weight='bold', 
+                labels={poa_idx:poa_v.sequence for poa_idx, poa_v in enumerate(self.poa_vertices)})
+        plt.savefig(path_to_image)
+
+    # def save_alignment(self):
+    #     alignments = ['' for w_idx in range(self.nr_walks)]
+
+
 
                     
                 
@@ -781,9 +798,10 @@ def save_blocks(blocks:list, graph_name, graph):
 
 os.chdir(sys.path[0])
 assert 'data' in os.listdir()
-for folder in ['blocks', 'vertex_name_to_idx', 'genome_name_to_idx', 'vertex_sequences']:
+for folder in ['blocks', 'vertex_name_to_idx', 'genome_name_to_idx', 'vertex_sequences', 'poa_visualized']:
     if not os.path.exists(folder):
         os.mkdir(folder)
+
 
 nr_blocks = []
 for graph_file_path in os.listdir('data'):
@@ -802,7 +820,11 @@ for graph_file_path in os.listdir('data'):
             for walk in block.collinear_walks:
                 assert graph.genomes[walk.genome].path[walk.start].vertex in block.carrying_path, f'{graph.genomes[walk.genome].path[walk.start].vertex=}'
                 assert graph.genomes[walk.genome].path[walk.end].vertex in block.carrying_path, f'{graph.genomes[walk.genome].path[walk.end].vertex=}'
-            PoaGraph(block, graph, sequences, match=5, gap=-1, mismatch=-2)
+            poa_graph = PoaGraph(block, graph, sequences, match=5, gap=-1, mismatch=-2)
+            image_folder = f'poa_visualized/{graph_name}'
+            if not os.path.exists(image_folder):
+                os.mkdir(image_folder)
+            poa_graph.visualize(f'{image_folder}/{block_nr}.png')
 print(f'Number of blocks for consecutive options:\n{nr_blocks}')
 
 # additional check
