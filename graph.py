@@ -256,7 +256,6 @@ class CollinearBlock:
                 # Update match_carrying - if there are two edges, which enter w, from one walk,
                 # save the one ending later
                 # except for the beginning of a walk
-                print(f'{last_carrying_match=}, {last_walk_match=}')
                 assert self.match_carrying[walk_to_extend][0][1] in {self.collinear_walks[walk_to_extend].start, self.collinear_walks[walk_to_extend].end}, f'{self.collinear_walks[walk_to_extend]=}, {self.match_carrying[walk_to_extend][0]=}'
 
                 if last_carrying_match==len(self.carrying_path)-1:
@@ -266,8 +265,7 @@ class CollinearBlock:
                     self.match_carrying[walk_to_extend].append((len(self.carrying_path)-1, o_nr_on_path))
                 assert self.collinear_walks[walk_to_extend].start<=self.match_carrying[walk_to_extend][-1][1]<=self.collinear_walks[walk_to_extend].end, f'{self.collinear_walks[walk_to_extend]=}, {self.match_carrying[walk_to_extend][-1]=}'
                 assert self.match_carrying[walk_to_extend][-1][0]<=len(self.carrying_path)-1, 'Carrying path idx in match_carrying should be increasing'
-                print(f'{[m[0] for m in self.match_carrying[walk_to_extend]]=}')
-
+                
                 assert self.match_carrying[walk_to_extend][0][1] in {self.collinear_walks[walk_to_extend].start, self.collinear_walks[walk_to_extend].end}, f'{self.collinear_walks[walk_to_extend]=}, {self.match_carrying[walk_to_extend][0]=}'
 
 
@@ -518,14 +516,14 @@ def merge_forward_backward_blocks(block_dict, nr_seeds):
             matches_b = backward_block.match_carrying[w_idx]
             assert -list(reversed(matches_b))[-1][0]==matches_f[0][0]
             assert list(reversed(matches_b))[-1][1]==matches_f[0][1]
-            forward_block.match_carrying[w_idx] = [(-m[0]+len(carrying_b)-1, m[1]) for m in list(reversed(matches_b))[:-1]] + [(m[0]+len(carrying_b), m[1]) for m in matches_f]
+            forward_block.match_carrying[w_idx] = [(-m[0]+len(carrying_b)-1, m[1]) for m in list(reversed(matches_b))[:-1]] + [(m[0]+len(carrying_b)-1, m[1]) for m in matches_f]
             assert all([m[0]>=0 for m in forward_block.match_carrying[w_idx]])
             assert forward_block.match_carrying[w_idx][0][1] in {forward_block.collinear_walks[w_idx].start, forward_block.collinear_walks[w_idx].end}, f'{forward_block.match_carrying[w_idx]=}, {forward_block.collinear_walks[w_idx]=}, {nr_seeds=}, {w_idx=}'
             assert forward_block.match_carrying[w_idx][-1][1] in {forward_block.collinear_walks[w_idx].start, forward_block.collinear_walks[w_idx].end}, f'{forward_block.match_carrying[w_idx]=}, {forward_block.collinear_walks[w_idx]=}, {nr_seeds=}, {w_idx=}'
         
         # merge the remaining elements of match_carrying
         for w_idx, matches in enumerate(forward_block.match_carrying[nr_seeds:]):
-            forward_block.match_carrying[w_idx+nr_seeds] = [(m[0]+len(carrying_b), m[1]) for m in matches]
+            forward_block.match_carrying[w_idx+nr_seeds] = [(m[0]+len(carrying_b)-1, m[1]) for m in matches]
         for matches in backward_block.match_carrying[nr_seeds:]:
             forward_block.match_carrying.append([(-m[0]+len(carrying_b)-1, m[1]) for m in list(reversed(matches))])
 
@@ -603,7 +601,7 @@ print(f'Number of blocks for consecutive options:\n{nr_blocks}')
 #     for i in range(10):
 #         print(f'{graph_file_path.upper()}, {SORT_SEEDS=}')
 #         var_graph = Graph('data/'+graph_file_path)
-#         blocks = graph.find_collinear_blocks()
+#         blocks = var_graph.find_collinear_blocks()
 #         nr_blocks.append(len(blocks))
 #         save_blocks(blocks, graph_file_path.split('.')[0], var_graph)
 #         graph_name = re.split(r'[\.\/]', graph_file_path)[-2]
