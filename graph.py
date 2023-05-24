@@ -6,6 +6,7 @@ import json
 import random
 from collections import namedtuple, defaultdict
 import pandas as pd
+import numpy as np
 from datetime import date
 import copy
 
@@ -22,7 +23,7 @@ SORT_SEEDS = ['no', 'nr_occurrences', 'length'][2]
 assert SORT_SEEDS in {'no', 'nr_occurrences', 'length'}, f'SORT_SEEDS must be one of "no", "nr_occurrences", "length", got {SORT_SEEDS}'
 
 CollinearWalk = namedtuple('CollinearWalk', ['genome', 'start', 'end', 'orient'])
-Path = namedtuple('Path', ['vertex', 'orientation', 'used', 'p_length']) # length --- length of the suffix of the genome, ending at the last character of this vertex
+Path = namedtuple('Path', ['vertex', 'orientation', 'used', 'p_length']) # p_length --- length of the prefix of the genome, ending at the last character of this vertex
 PathFromW0 = namedtuple('ExtensionVertex', ['distance', 'walk_nr', 'w0_nr_on_path', 't_nr_on_path'])
 CarryingPathExtension = namedtuple('CarryingPathExtension', ['vertex', 'orientation'])
 occurrence = namedtuple('occurrence', ['genome', 'nr_on_path'])
@@ -79,14 +80,14 @@ class Graph:
                 if line.startswith('P'): # or 'W'
                     g = line.strip().split() # P, name, vertices' names, overlaps
                     path = [] # list[Path] - vertex, orientation, used
-                    length = 0
+                    p_length = 0
                     for v_pos, vertex in enumerate(g[2].split(',')):
                         v_name = vertex[:-1]
                         v_idx = vertex_name_to_idx[v_name]
                         v_orientation = 1 if vertex[-1]=='+' else -1
                         self.vertices[v_idx].add_occurrence(len(self.genomes), v_pos) # genome, nr_on_path
-                        length += self.vertices[v_idx].v_length
-                        path.append(Path(v_idx, v_orientation, False, length))
+                        p_length += self.vertices[v_idx].v_length
+                        path.append(Path(v_idx, v_orientation, False, p_length))
                     genome_name_to_idx[g[1]] = len(self.genomes)
                     self.genomes.append(Genome(path))
         # save dictionaries to .json files
@@ -94,6 +95,30 @@ class Graph:
             json.dump(vertex_name_to_idx, f)
         with open(f'genome_name_to_idx/{graph_name}.json', 'w') as f:
             json.dump(genome_name_to_idx, f)
+
+    def find_seeds(self, v_idx):
+        v = self.vertices[v_idx]
+        # Check if junction with occ len > a
+        if len(v.occurrences) > PARAM_a:
+            return [], None
+        collinear_seeds = [] # list to store occurrences of v not used before
+        carrying_seed_orientation = None
+        for g_idx, i in v.occurrences: # occurrences of the vertex
+            genome = self.genomes[g_idx]
+            g_path_pos = genome.path[i] # vertex index: int, orientation: int, used: bool
+            assert g_path_pos.vertex==v_idx, f'v_idx should be saved in path. Got {v_idx=}, path_v_idx={g_path_pos.vertex}.'
+            if g_path_pos.used==False:
+                if not collinear_seeds:
+                    orient = 1
+                    carrying_seed_orientation = g_path_pos.orientation
+                else:
+                    orient = g_path_pos.orientation*carrying_seed_orientation
+                collinear_seeds.append(CollinearWalk(g_idx, i, i, orient))
+                walk_start_end_check(collinear_seeds[-1], len(genome.path))
+        if carrying_seed_orientation is None:
+            assert not collinear_seeds, f'If carrying_seed_orientation is None, collinear_seeds must be empty. Got {collinear_seeds=}.'
+
+        return collinear_seeds, carrying_seed_orientation
 
     def find_collinear_blocks(self):
         collinear_blocks = []
@@ -107,23 +132,7 @@ class Graph:
             random.shuffle(vertex_indices_order)
         
         for v_idx in vertex_indices_order: # select a vertex --- seed of a new CollinearBlock
-            v = self.vertices[v_idx]
-            # Check if junction with occ len > a
-            if len(v.occurrences) > PARAM_a:
-                continue
-            collinear_seeds = [] # list to store occurrences of v not used before
-            for g_idx, i in v.occurrences: # occurrences of the vertex
-                genome = self.genomes[g_idx]
-                g_path_pos = genome.path[i] # vertex index: int, orientation: int, used: bool
-                assert g_path_pos.vertex==v_idx, f'v_idx should be saved in path. Got {v_idx=}, path_v_idx={g_path_pos.vertex}.'
-                if g_path_pos.used==False:
-                    if not collinear_seeds:
-                        orient = 1
-                        carrying_seed_orientation = g_path_pos.orientation
-                    else:
-                        orient = g_path_pos.orientation*carrying_seed_orientation
-                    collinear_seeds.append(CollinearWalk(g_idx, i, i, orient))
-                    walk_start_end_check(collinear_seeds[-1], len(genome.path))
+            collinear_seeds, carrying_seed_orientation = self.find_seeds(v_idx)
             if not collinear_seeds:
                 continue
             
@@ -154,23 +163,20 @@ class Graph:
                         if new_score>best_score:
                             best_block = copy.copy(new_block)
                             best_score = new_score 
-                    for s_nr, seed in enumerate(collinear_seeds):
+                    for s_nr, seed in enumerate(seeds):
                         assert seed.genome==new_block.collinear_walks[s_nr].genome
                         
                 if best_score>0:
                     blocks_forward_backward[forward_backward] = copy.copy(best_block)
 
             if blocks_forward_backward:
-                for block in blocks_forward_backward.values():
-                    for matches in block.match_carrying:
-                        for i in range(len(matches)-1):
-                            assert matches[i][0]<matches[i+1][0], f'{i=}, {matches[i]=}, {matches[i+1]=}'
                 final_block = merge_forward_backward_blocks(blocks_forward_backward, len(collinear_seeds))
-                for matches in block.match_carrying:
-                    for i in range(len(matches)-1):
-                        assert matches[i][0]<matches[i+1][0], f'{i=}, {matches[i]=}, {matches[i+1]=}'
                 mark_vertices_as_used(self, final_block)
                 final_block.remove_short_walks(self)
+                final_block.remove_doubled_matches() ###
+                for matches in final_block.match_carrying:
+                    for i in range(len(matches)-1):
+                        assert matches[i][0]<matches[i+1][0], f'{i=}, {matches[i]=}, {matches[i+1]=}'
                 collinear_blocks.append(final_block)
                 
         return collinear_blocks
@@ -258,11 +264,7 @@ class CollinearBlock:
                 # except for the beginning of a walk
                 assert self.match_carrying[walk_to_extend][0][1] in {self.collinear_walks[walk_to_extend].start, self.collinear_walks[walk_to_extend].end}, f'{self.collinear_walks[walk_to_extend]=}, {self.match_carrying[walk_to_extend][0]=}'
 
-                if last_carrying_match==len(self.carrying_path)-1:
-                    if len(self.match_carrying[walk_to_extend])!=1 and (o_nr_on_path-last_walk_match)*walk.orient>0:
-                        self.match_carrying[walk_to_extend][-1] = (len(self.carrying_path)-1, o_nr_on_path)
-                else:
-                    self.match_carrying[walk_to_extend].append((len(self.carrying_path)-1, o_nr_on_path))
+                self.match_carrying[walk_to_extend].append((len(self.carrying_path)-1, o_nr_on_path))
                 assert self.collinear_walks[walk_to_extend].start<=self.match_carrying[walk_to_extend][-1][1]<=self.collinear_walks[walk_to_extend].end, f'{self.collinear_walks[walk_to_extend]=}, {self.match_carrying[walk_to_extend][-1]=}'
                 assert self.match_carrying[walk_to_extend][-1][0]<=len(self.carrying_path)-1, 'Carrying path idx in match_carrying should be increasing'
                 
@@ -300,7 +302,31 @@ class CollinearBlock:
                 self.collinear_walks.pop(w_idx)
                 self.match_carrying.pop(w_idx)
                 # self.scores.pop(w_idx)
-                  
+    
+    def remove_doubled_matches(self):
+        for w_idx, walk in enumerate(self.collinear_walks):
+            assert self.match_carrying[w_idx][0][1] in {walk.start, walk.end}, f'{self.match_carrying[w_idx]=}, {walk=}'
+            assert self.match_carrying[w_idx][-1][1] in {walk.start, walk.end}, f'{self.match_carrying[w_idx]=}, {walk=}'
+            matches = self.match_carrying[w_idx].copy()
+            for i in range(len(matches)-1, 0, -1):
+                prev_match_carrying, prev_match_walk = self.match_carrying[w_idx][i-1]
+                match_carrying, match_walk = self.match_carrying[w_idx][i]
+                if prev_match_carrying==match_carrying:
+                    if i==1: # we need a match at the beginning of the walk
+                        if walk.orient==1:
+                            self.match_carrying[w_idx][i-1] = (match_carrying, min(prev_match_walk, match_walk))
+                        else:
+                            self.match_carrying[w_idx][i-1] = (match_carrying, max(prev_match_walk, match_walk))
+                    else:
+                        if walk.orient==1:
+                            self.match_carrying[w_idx][i-1] = (match_carrying, max(prev_match_walk, match_walk))
+                        else:
+                            self.match_carrying[w_idx][i-1] = (match_carrying, min(prev_match_walk, match_walk))
+                    self.match_carrying[w_idx].pop(i)
+            assert self.match_carrying[w_idx][0][1] in {walk.start, walk.end}, f'{self.match_carrying[w_idx]=}, {matches=}, {walk=}'
+            assert self.match_carrying[w_idx][-1][1] in {walk.start, walk.end}, f'{self.match_carrying[w_idx]=}, {matches=}, {walk=}'
+                
+                
 class BlockExtensions:
     extensions: dict # list of extensions of type CollinearWalk
     coverage: dict # {vertex index: coverage}, where coverage - number of occurrences in extensions
@@ -500,11 +526,11 @@ def merge_forward_backward_blocks(block_dict, nr_seeds):
         assert len(backward_block.match_carrying)==len(backward_block.collinear_walks)
         
         for w_idx in range(len(forward_block.collinear_walks)):
-            assert forward_block.match_carrying[w_idx][0][1] in {forward_block.collinear_walks[w_idx].start, forward_block.collinear_walks[w_idx].end}, f'{forward_block.match_carrying[w_idx][0]=}, {forward_block.collinear_walks[w_idx]=}'
-            assert forward_block.match_carrying[w_idx][-1][1] in {forward_block.collinear_walks[w_idx].start, forward_block.collinear_walks[w_idx].end}, f'{forward_block.match_carrying[w_idx][-1]=}, {forward_block.collinear_walks[w_idx]=}'
+            assert forward_block.match_carrying[w_idx][0][1] in {forward_block.collinear_walks[w_idx].start, forward_block.collinear_walks[w_idx].end}, f'{forward_block.match_carrying[w_idx]=}, {forward_block.collinear_walks[w_idx]=}'
+            assert forward_block.match_carrying[w_idx][-1][1] in {forward_block.collinear_walks[w_idx].start, forward_block.collinear_walks[w_idx].end}, f'{forward_block.match_carrying[w_idx]=}, {forward_block.collinear_walks[w_idx]=}'
         for w_idx in range(len(backward_block.collinear_walks)):
-            assert backward_block.match_carrying[w_idx][0][1] in {backward_block.collinear_walks[w_idx].start, backward_block.collinear_walks[w_idx].end}, f'{backward_block.match_carrying[w_idx][0]=}, {backward_block.collinear_walks[w_idx]=}'
-            assert backward_block.match_carrying[w_idx][-1][1] in {backward_block.collinear_walks[w_idx].start, backward_block.collinear_walks[w_idx].end}, f'{backward_block.match_carrying[w_idx][-1]=}, {backward_block.collinear_walks[w_idx]=}'
+            assert backward_block.match_carrying[w_idx][0][1] in {backward_block.collinear_walks[w_idx].start, backward_block.collinear_walks[w_idx].end}, f'{backward_block.match_carrying[w_idx]=}, {backward_block.collinear_walks[w_idx]=}'
+            assert backward_block.match_carrying[w_idx][-1][1] in {backward_block.collinear_walks[w_idx].start, backward_block.collinear_walks[w_idx].end}, f'{backward_block.match_carrying[w_idx]=}, {backward_block.collinear_walks[w_idx]=}'
         
         for w_idx in range(nr_seeds):
             walk_f = forward_block.collinear_walks[w_idx]
@@ -538,6 +564,7 @@ def merge_forward_backward_blocks(block_dict, nr_seeds):
         
         # merge carrying paths and their orientations
         assert forward_block.carrying_path[0]==carrying_b[0]
+        assert forward_block.carrying_path[0]==list(reversed(carrying_b))[-1]
         assert forward_block.carrying_path_orientations[0]==-carrying_orient_b[0], f'{forward_block.carrying_path_orientations[0]=}, {carrying_orient_b[0]=}'
         carrying_len = len(forward_block.carrying_path) + len(carrying_orient_b) - 1
         forward_block.carrying_path = list(reversed(carrying_b))[:-1] + forward_block.carrying_path
@@ -566,6 +593,44 @@ def save_blocks(blocks:list, graph_name, graph):
         name = f'{graph_name}_{today}.csv'
     df_all.to_csv(f'blocks/{name}', index=False)
 
+def save_blocks_to_gff(blocks:list, graph_name, graph):
+    # columns:
+    # seqname, source, feature, start, end, score, strand, frame, attribute
+    # Example from a SibeliaZ output
+    # 3	SibeliaZ	SO:0000856	212	283	.	+	.	ID=1
+    gff_cols = ['seqname', 'source', 'feature', 'start', 
+                'end', 'score', 'strand', 'frame', 'attribute']
+    df_all = pd.DataFrame()
+    walk_starts = []
+    walk_ends = []
+    for b_nr, block in enumerate(blocks):
+        for walk in block.collinear_walks:
+            walk_starts.append(walk_length(walk, graph, end=walk.start)-1)
+            walk_ends.append(walk_length(walk, graph)-1)
+            assert walk_starts[-1]>=0 and walk_ends[-1]>=0, f'{walk_starts[-1]=}, {walk_ends[-1]=}'
+        df = pd.DataFrame.from_records(block.collinear_walks, columns=CollinearWalk._fields)
+        df['attribute'] = f'ID={b_nr}'
+        df_all = pd.concat([df_all, df])
+    df_all['start'] = walk_starts
+    df_all['end'] = walk_ends
+    df_all['source'] = 'final project'
+    df_all['feature'] = '.'
+    df_all['orient'] = np.where(df_all['orient']>0, '+', '-')
+    df_all['score'] = '.'
+    df_all['frame'] = '.'
+    df_all.rename(columns={'genome':'seqname', 'orient':'strand'}, inplace=True)
+    df_all = df_all[gff_cols]
+    today = str(date.today()).replace('-', '_')
+    
+    
+    if SORT_SEEDS=='nr_occurrences':
+        name = f'{graph_name}_{today}_sort_by_nr_occurrences.gff'
+    elif SORT_SEEDS=='length':
+        name = f'{graph_name}_{today}_sort_by_length.gff'
+    else:
+        name = f'{graph_name}_{today}.gff'
+    df_all.to_csv(f'blocks/{name}', index=False)
+
 os.chdir(sys.path[0])
 print(f'PWD={os.getcwd()}')
 assert 'data' in os.listdir()
@@ -581,6 +646,7 @@ for graph_file_path in os.listdir('data'):
         var_graph = Graph('data/'+graph_file_path)
         blocks = var_graph.find_collinear_blocks()
         nr_blocks.append(len(blocks))
+        # save_blocks_to_gff(blocks, graph_file_path.split('.')[0], var_graph)
         save_blocks(blocks, graph_file_path.split('.')[0], var_graph)
         graph_name = re.split(r'[\.\/]', graph_file_path)[-2]
         with open(f'vertex_sequences/{graph_name}.txt') as f:
@@ -603,6 +669,7 @@ print(f'Number of blocks for consecutive options:\n{nr_blocks}')
 #         var_graph = Graph('data/'+graph_file_path)
 #         blocks = var_graph.find_collinear_blocks()
 #         nr_blocks.append(len(blocks))
+#         # save_blocks_to_gff(blocks, graph_file_path.split('.')[0], var_graph)
 #         save_blocks(blocks, graph_file_path.split('.')[0], var_graph)
 #         graph_name = re.split(r'[\.\/]', graph_file_path)[-2]
 #         with open(f'vertex_sequences/{graph_name}.txt') as f:
@@ -628,7 +695,6 @@ Pomysły (nie jak w artykule):
     - Iść po ścieżce i szukać czegokolwiek, co jest w r. Wtedy sprawdzać, na czym najlepiej się zatrzymać.
 
 TO FIX:
-    - Range z odpowiednim krokiem!!!!
     - Po zakończeniu dużego kroku: zapamiętać rozszerzenia i z nich korzystać.
     - Po dużym kroku zapamiętać scory poszczególnych ścieżek do końca łańcucha i później doliczać tylko odtąd.
     - Budując shortest_walk w przedłużeniach: chyyyba trzeba wziąć pod uwagę 
