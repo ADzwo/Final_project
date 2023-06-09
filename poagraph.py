@@ -308,6 +308,7 @@ class POAGraph(object):
         headID = None
         tailID = None
 
+        walk_to_poa = []
         # head, tail of sequence may be unaligned; just add those into the
         # graph directly
         validstringidxs = [si for si in stringidxs if si is not None]
@@ -349,6 +350,8 @@ class POAGraph(object):
                         self.nodedict[otherNodeID].alignedTo.append(nodeID)
                 else:
                     nodeID = foundNode
+            
+            walk_to_poa.append(nodeID)
 
             self.addEdge(headID, nodeID, label)
             headID = nodeID
@@ -364,7 +367,7 @@ class POAGraph(object):
         self.__seqs.append(seq)
         self.__labels.append(label)
         self.__starts.append(firstID)
-        return
+        return walk_to_poa
 
     def consensus(self, excludeLabels=None):
         if excludeLabels is None:
@@ -474,14 +477,15 @@ class POAGraph(object):
                 curnode_id = node.nextNode(label)
             alignstrings.append("".join(charlist))
 
-        # Step 3: Same as step 2, but with consensus sequences
-        consenses = self.allConsenses()
-        for i, consensus in enumerate(consenses):
-            seqnames.append('Consensus'+str(i))
-            charlist = ['-']*ncolumns
-            for path, base in zip(consensus[0], consensus[1]):
-                charlist[column_index[path]] = base
-            alignstrings.append("".join(charlist))
+        # # Step 3: Same as step 2, but with consensus sequences
+        # print('CONSENSUS')
+        # consenses = self.allConsenses()
+        # for i, consensus in enumerate(consenses):
+        #     seqnames.append('Consensus'+str(i))
+        #     charlist = ['-']*ncolumns
+        #     for path, base in zip(consensus[0], consensus[1]):
+        #         charlist[column_index[path]] = base
+        #     alignstrings.append("".join(charlist))
 
         return list(zip(seqnames, alignstrings))
 

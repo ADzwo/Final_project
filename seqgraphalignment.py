@@ -15,7 +15,7 @@ class SeqGraphAlignment(object):
 
     def __init__(self, sequence, graph, fastMethod=True, globalAlign=False,
                  matchscore=__matchscore, mismatchscore=__mismatchscore,
-                 gapscore=__gap, *args, **kwargs):
+                 gapscore=__gap, to_use=None, end=None, *args, **kwargs):
         self._mismatchscore = mismatchscore
         self._matchscore = matchscore
         self._gap = gapscore
@@ -24,6 +24,10 @@ class SeqGraphAlignment(object):
         self.stringidxs  = None
         self.nodeidxs    = None
         self.globalAlign = globalAlign
+        self.to_use = to_use
+        if to_use is None: assert end is not None
+        self.end = end
+        self.to_use_nodes_sorted = [graph.nodedict[nid] for nid in sorted(to_use)] # list(sorted(to_use.keys()))
         if fastMethod:
             matches = self.alignStringToGraphFast(*args, **kwargs)
         else:
@@ -56,8 +60,8 @@ class SeqGraphAlignment(object):
         nodeIDtoIndex, nodeIndexToID, scores, backStrIdx, backGrphIdx = self.initializeDynamicProgrammingData()
 
         # Dynamic Programming
-        ni = self.graph.nodeiterator()
-        for i, node in enumerate(ni()):
+        ni = self.graph.nodeiterator()() if self.to_use is None else self.to_use_nodes_sorted
+        for i, node in enumerate(ni):
             pbase = node.base
 
             for j, sbase in enumerate(self.sequence):
@@ -66,7 +70,6 @@ class SeqGraphAlignment(object):
                 for predIndex in self.prevIndices(node, nodeIDtoIndex):
                     candidates += [(scores[predIndex+1, j+1] + self._gap, predIndex+1, j+1, "DEL")]
                     candidates += [(scores[predIndex+1, j] + self.matchscore(sbase, pbase), predIndex+1, j, "MATCH")]
-
                 scores[i+1, j+1], backGrphIdx[i+1, j+1], backStrIdx[i+1, j+1], movetype = max(candidates)
 
                 if not self.globalAlign and scores[i+1, j+1] < 0:
@@ -152,7 +155,13 @@ class SeqGraphAlignment(object):
     def prevIndices(self, node, nodeIDtoIndex):
         """Return a list of the previous dynamic programming table indices
            corresponding to predecessors of the current node."""
-        prev = [nodeIDtoIndex[predID] for predID in list(node.inEdges.keys())]
+        if self.to_use is None:
+            prev = [nodeIDtoIndex[predID] for predID in list(node.inEdges.keys())]
+        else:
+            prev = []
+            for predID in list(node.inEdges.keys()):
+                if predID in self.to_use:
+                    prev.append(nodeIDtoIndex[predID])
         # if no predecessors, point to just before the graph
         if not prev:
             prev = [-1]
@@ -163,28 +172,28 @@ class SeqGraphAlignment(object):
             - set up scores array
             - set up backtracking array
             - create index to Node ID table and vice versa"""
-        l1 = self.graph.nNodes
+        l1 = self.graph.nNodes if self.to_use is None else len(self.to_use)
         l2 = len(self.sequence)
 
         nodeIDtoIndex = {}
         nodeIndexToID = {-1: None}
         # generate a dict of (nodeID) -> (index into nodelist (and thus matrix))
-        ni = self.graph.nodeiterator()
-        for (index, node) in enumerate(ni()):
+        ni = self.graph.nodeiterator()() if self.to_use is None else self.to_use_nodes_sorted
+        for (index, node) in enumerate(ni):
             nodeIDtoIndex[node.ID] = index
             nodeIndexToID[index] = node.ID
 
         # Dynamic Programming data structures; scores matrix and backtracking
         # matrix
-        scores = numpy.zeros((l1+1, l2+1), dtype=numpy.int)
+        scores = numpy.zeros((l1+1, l2+1), dtype=numpy.int64)
 
         # initialize insertion score
         # if global align, penalty for starting at head != 0
         if self.globalAlign:
             scores[0, :] = numpy.arange(l2+1)*self._gap
 
-            ni = self.graph.nodeiterator()
-            for (index, node) in enumerate(ni()):
+            ni = self.graph.nodeiterator()() if self.to_use is None else self.to_use_nodes_sorted
+            for (index, node) in enumerate(ni):
                 prevIdxs = self.prevIndices(node, nodeIDtoIndex)
                 best = scores[prevIdxs[0]+1, 0]
                 for prevIdx in prevIdxs:
@@ -192,8 +201,8 @@ class SeqGraphAlignment(object):
                 scores[index+1, 0] = best + self._gap
 
         # backtracking matrices
-        backStrIdx = numpy.zeros((l1+1, l2+1), dtype=numpy.int)
-        backGrphIdx = numpy.zeros((l1+1, l2+1), dtype=numpy.int)
+        backStrIdx = numpy.zeros((l1+1, l2+1), dtype=numpy.int64)
+        backGrphIdx = numpy.zeros((l1+1, l2+1), dtype=numpy.int64)
 
         return nodeIDtoIndex, nodeIndexToID, scores, backStrIdx, backGrphIdx
 
@@ -207,11 +216,17 @@ class SeqGraphAlignment(object):
         if not self.globalAlign:
             besti, bestj = numpy.argwhere(scores == numpy.amax(scores))[-1]
         else:
-            ni = self.graph.nodeiterator()
+            ni = self.graph.nodeiterator()() if self.to_use is None else self.to_use_nodes_sorted
             # still have to find best final index to start from
-            terminalIndices = [
-                index for (index, node) in enumerate(ni()) if node.outDegree == 0
-            ]
+            if self.to_use is None:
+                terminalIndices = [
+                    index for (index, node) in enumerate(ni) if node.outDegree == 0
+                ]
+            else:
+                # print(f'{self.end=}')
+                # terminalIndices = [index for (index, node) in enumerate(ni) if node.ID==self.end]
+                terminalIndices = [index for (index, node) in enumerate(ni) if self.end in node.outEdges]
+                assert terminalIndices, f'{self.end=}, {self.to_use=}'
 
             besti = terminalIndices[0] + 1
             bestscore = scores[besti, bestj]
