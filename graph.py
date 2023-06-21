@@ -346,9 +346,8 @@ class BlockExtensions:
             if g_path[proximal].used==True:
                 break
             w0_nr_on_path = find_vertex_on_path_till_b(graph, walk, w0_idx, 
-                                                        proximal=to_search_from,
-                                                        distal=to_end_search) # taking the closest position to the collinear walk
-                            # Shouldn't we take all relevant occurrences of w0? <--- TO FIX?
+                                                       proximal=to_search_from,
+                                                       distal=to_end_search) # taking the closest position to the collinear walk <--- maybe should take the last one?
             p_length = 0
             i = proximal
             if w0_nr_on_path is None: # only increase coverage
@@ -357,7 +356,8 @@ class BlockExtensions:
                         i -= walk.orient
                         break
                     v_idx = g_path[i].vertex
-                    self.coverage[v_idx] = self.coverage.get(v_idx, 0) + 1
+                    v_oriented = v_idx*g_path[i].orientation
+                    self.coverage[v_oriented] = self.coverage.get(v_oriented, 0) + 1
                     p_length += graph.vertices[v_idx].v_length
                     if p_length>=PARAM_b:
                         break
@@ -370,17 +370,18 @@ class BlockExtensions:
                         i -= walk.orient
                         break
                     v_idx = g_path[i].vertex
-                    self.coverage[v_idx] = self.coverage.get(v_idx, 0) + 1
+                    v_oriented = v_idx*g_path[i].orientation
+                    self.coverage[v_oriented] = self.coverage.get(v_oriented, 0) + 1
                     p_length += graph.vertices[v_idx].v_length
                     if p_length>=PARAM_b:
                         break
                     is_w0_before_v = ((i-w0_nr_on_path)*walk.orient) > 0
                     if is_w0_before_v:
                         distance = walk_length(CollinearWalk(g_idx, min(w0_nr_on_path,i), max(w0_nr_on_path,i), 1), graph)
-                        if v_idx not in self.shortest_walk or self.shortest_walk[v_idx].distance>distance:
-                            self.shortest_walk[v_idx] = PathFromW0(distance, walk_nr, w0_nr_on_path+walk.orient, i)
-                            assert self.shortest_walk[v_idx].w0_nr_on_path<g_len, f'{self.shortest_walk[v_idx].w0_nr_on_path=}, {g_len=}'
-                            assert self.shortest_walk[v_idx].t_nr_on_path<g_len, f'{self.shortest_walk[v_idx].t_nr_on_path=}, {g_len=}'
+                        if v_oriented not in self.shortest_walk or self.shortest_walk[v_oriented].distance>distance:
+                            self.shortest_walk[v_oriented] = PathFromW0(distance, walk_nr, w0_nr_on_path+walk.orient, i)
+                            assert self.shortest_walk[v_oriented].w0_nr_on_path<g_len, f'{self.shortest_walk[v_oriented].w0_nr_on_path=}, {g_len=}'
+                            assert self.shortest_walk[v_oriented].t_nr_on_path<g_len, f'{self.shortest_walk[v_oriented].t_nr_on_path=}, {g_len=}'
                     if i in {0, g_len-1}:
                         break
                     i += walk.orient # going forwards or backwards on the genome
@@ -401,10 +402,10 @@ class BlockExtensions:
         '''
         highest_coverage = -1
         w0_to_t = None
-        for v_idx in self.shortest_walk: # for all vertices reachable from w0 within distance PARAM_b
-            if self.coverage[v_idx]>highest_coverage: # if coverage is greater than the highest one by now
-                w0_to_t = self.shortest_walk[v_idx]
-                highest_coverage = self.coverage[v_idx]
+        for v_oriented in self.shortest_walk: # for all vertices reachable from w0 within distance PARAM_b
+            if self.coverage[v_oriented]>highest_coverage: # if coverage is greater than the highest one by now
+                w0_to_t = self.shortest_walk[v_oriented]
+                highest_coverage = self.coverage[v_oriented]
         if w0_to_t is None:
             return []
         
@@ -710,5 +711,5 @@ TO FIX:
     wszystkie wystąpienia w0 na przedłużeniu. Wtedy nie przegapimy najkrótszej drogi.
 
 Not necessary:
-    Pamiętać po dużym kroku, które wierzchołki się końćzą w starym t (nowym w0).
+    Pamiętać po dużym kroku, które wierzchołki się kończą w starym t (nowym w0).
 '''
