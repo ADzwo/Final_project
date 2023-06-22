@@ -1,0 +1,84 @@
+import re
+import json
+
+from tuples import *
+from params import *
+
+class Genome:
+    path: list # Path: vertex index: int, orientation: int, used: bool
+    
+    def __init__(self, path):
+        self.path = path
+
+
+class Vertex:
+    length: int # length of the represented sequence
+    occurrences: list # occurrence: genome index, index on its path
+
+    def __init__(self, length, occurrences=None):
+        self.v_length = length
+        if not occurrences:
+            self.occurrences = []
+        else:
+            self.occurrences = occurrences
+
+    def add_occurrence(self, g_idx, nr_on_path):
+        self.occurrences.append(occurrence(g_idx, nr_on_path))
+
+
+class Graph:
+    genomes: list # list of Genome objects
+    vertices: list # list of Vertex objects
+    name: str
+
+    def __init__(self, graph_file_path):
+        self.vertices = []
+        self.genomes = []
+        vertex_name_to_idx = {} # dict to save {vertex id from gfa file: index in Graph.vertices}
+        genome_name_to_idx = {}
+        sequences = []
+        self.name = re.split(r'[\.\/]', graph_file_path)[-2]
+
+        # find S lines and fill vertex_name_to_idx dict 
+        with open(graph_file_path,'r') as graph_file:
+            for line in graph_file.readlines():
+                if line.startswith('S'):
+                    v_name, v_sequence = self.add_vertex(line)
+                    if v_name is not None:
+                        vertex_name_to_idx[v_name] = len(self.vertices)-1
+                        sequences.append(v_sequence)
+        with open(f'vertex_sequences/{self.name}.txt', 'w') as f:
+            f.writelines(sequences)
+            del sequences
+        # find P lines and fill genome_name_to_idx dict 
+        with open(graph_file_path,'r') as graph_file:
+            for line in graph_file.readlines():
+                if line.startswith('P'): # or 'W'
+                    g = line.strip().split() # P, name, vertices' names, overlaps
+                    path = [] # list[Path] - vertex, orientation, used
+                    p_length = 0
+                    for v_pos, vertex in enumerate(g[2].split(',')):
+                        v_name = vertex[:-1]
+                        if v_name not in vertex_name_to_idx:
+                            raise ValueError(f'File {graph_file_path} contains undefined sequence {v_name} in a genome.')
+                        v_idx = vertex_name_to_idx[v_name]
+                        v_orientation = 1 if vertex[-1]=='+' else -1
+                        self.vertices[v_idx].add_occurrence(len(self.genomes), v_pos) # genome, nr_on_path
+                        p_length += self.vertices[v_idx].v_length
+                        path.append(Path(v_idx, v_orientation, False, p_length))
+                    genome_name_to_idx[g[1]] = len(self.genomes)
+                    self.genomes.append(Genome(path))
+        # save dictionaries to .json files
+        with open(f'vertex_name_to_idx/{self.name}.json', 'w') as f:
+            json.dump(vertex_name_to_idx, f)
+        with open(f'genome_name_to_idx/{self.name}.json', 'w') as f:
+            json.dump(genome_name_to_idx, f)
+          
+    def add_vertex(self, line):
+        v = line.strip().split()
+        if len(v)==3:
+            v_name = v[1]
+            self.vertices.append(Vertex(len(v[2])))
+            v_sequence = v[2].upper()+'\n'
+            return v_name, v_sequence
+        return None, None
