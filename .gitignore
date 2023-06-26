@@ -1,4 +1,5 @@
 *.gfa
+*.gff
 *.csv
 *.json
 *.txt
