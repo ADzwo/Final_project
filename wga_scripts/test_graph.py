@@ -1,7 +1,7 @@
 import unittest
 import os, sys
 from tuples import *
-from params import *
+from config import *
 from graph import *
 
 os.chdir(sys.path[0])
@@ -15,7 +15,8 @@ def check_v_idx_in_genome_path(v_idx, v, graph):
     for g_idx, i in v.occurrences: # occurrences of the vertex
         genome = graph.genomes[g_idx]
         g_path_pos = genome.path[i] # vertex index: int, orientation: int, used: bool
-        assert g_path_pos.vertex==v_idx, f'v_idx should be saved in path. Got {v_idx=}, path_v_idx={g_path_pos.vertex}.'
+        assert g_path_pos.vertex==v_idx, f'For occurrences of the same vertex, v_idx should be the same in genome path.\
+                                            Got primary {v_idx=}, path_v_idx={g_path_pos.vertex}.'
 
 
 class TestGraph(unittest.TestCase):

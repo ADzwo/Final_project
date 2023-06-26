@@ -1,5 +1,5 @@
 import unittest
-from params import *
+from config import *
 
 class TestParams(unittest.TestCase):
     def test_numeric_params(self):

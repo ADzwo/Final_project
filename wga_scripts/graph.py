@@ -2,7 +2,7 @@ import re
 import json
 
 from tuples import *
-from params import *
+from config import *
 
 class Genome:
     path: list # Path: vertex index: int, orientation: int, used: bool
@@ -82,3 +82,33 @@ class Graph:
             v_sequence = v[2].upper()+'\n'
             return v_name, v_sequence
         return None, None
+
+    def find_seeds(self, v_idx):
+        '''
+        Function finds all occurrences of vertex v_idx, which have not been used before.
+        If such occurrences exist, function returns a tuple containing:
+            - seeds of collinear walks - list of CollinearWalk objects, describing the occurrence, 
+            along with its genome and its orientation relative to the carrying path,
+            - carrying path seed orientation - integer (1 or -1), describing the (BAZWZGLĘDNA) orientation of  <--- TO FIX
+            the first seed in the list (carrying path seed).
+        '''
+        v = self.vertices[v_idx]
+        collinear_seeds = [] # list to store occurrences of v not used before
+        carrying_seed_orientation = None
+        if len(v.occurrences) <= PARAM_a: # pruning, if necessary
+            for g_idx, i in v.occurrences: # occurrences of the vertex
+                genome = self.genomes[g_idx]
+                g_path_pos = genome.path[i] # vertex index: int, orientation: int, used: bool
+                assert g_path_pos.vertex==v_idx, f'v_idx should be saved in path. Got {v_idx=}, path_v_idx={g_path_pos.vertex}.'
+                if g_path_pos.used==False:
+                    if not collinear_seeds:
+                        orient = 1
+                        carrying_seed_orientation = g_path_pos.orientation
+                    else:
+                        orient = g_path_pos.orientation*carrying_seed_orientation
+                    collinear_seeds.append(CollinearWalk(g_idx, i, i, orient))
+                    # walk_start_end_check(collinear_seeds[-1], len(genome.path))
+            if carrying_seed_orientation is None:
+                assert not collinear_seeds, f'If carrying_seed_orientation is None, collinear_seeds must be empty. Got {collinear_seeds=}.'
+
+        return collinear_seeds, carrying_seed_orientation
