@@ -95,6 +95,18 @@ class TestGraph(unittest.TestCase):
                              msg=f'Number of sequences should be equal to the number of vertices. \
                                 Got {len(sequences)=}, {len(graph.vertices)=}')
 
+    def test_find_seeds(self):
+        collinear_seeds, carrying_seed_orientation = self.graph1.find_seeds(4)
+        self.assertEqual(len(collinear_seeds), 2)
+        self.assertEqual(collinear_seeds, [CollinearWalk(0, 4, 4, 1), CollinearWalk(2, 3, 3, -1)])
+        self.assertEqual(carrying_seed_orientation, 1)
+
+        collinear_seeds, carrying_seed_orientation = self.graph2.find_seeds(1)
+        self.assertEqual(len(collinear_seeds), 1)
+        self.assertEqual(collinear_seeds, [CollinearWalk(1, 1, 1, 1)])
+        self.assertEqual(carrying_seed_orientation, -1)
+
+
 if __name__=='__main__':
     unittest.main()
      
