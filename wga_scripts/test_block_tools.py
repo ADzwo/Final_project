@@ -6,7 +6,6 @@ import pandas as pd
 from datetime import date
 from tuples import *
 from config import *
-import block_tools
 from block_tools import walk_length, find_vertex_on_path_till_b, mark_vertices_as_used, remove_short_walks, scoring_function, save_blocks_to_gff
 from graph import Graph
 
@@ -69,14 +68,15 @@ class TestGraph(unittest.TestCase):
 
     def test_find_vertex_on_path_till_b(self):
         walk1 = CollinearWalk(0, 0, 9, 1)
-        pos = find_vertex_on_path_till_b(self.graph1, walk1, 9, 7, 9)
+
+        pos = find_vertex_on_path_till_b(self.graph1, walk1, 9, 1, 7, 9, PARAM_b=200)
         self.assertEqual(pos, 9)
-        if PARAM_b<254:
-            pos = find_vertex_on_path_till_b(self.graph1, walk1, 9, 0, 9)
-            self.assertIsNone(pos) # vertex 9 is not reachable within PARAM_b from 0
+        
+        pos = find_vertex_on_path_till_b(self.graph1, walk1, 9, 1, 0, 9, PARAM_b=200)
+        self.assertIsNone(pos) # vertex 9 is not reachable within PARAM_b from 0
 
         walk1 = CollinearWalk(0, 0, 9, -1)
-        pos = find_vertex_on_path_till_b(self.graph1, walk1, 9, 9, 0)
+        pos = find_vertex_on_path_till_b(self.graph1, walk1, 9, -1, 9, 0, PARAM_b=200)
         self.assertEqual(pos, 9)
 
     def test_mark_vertices_as_used(self):
@@ -113,66 +113,72 @@ class TestGraph(unittest.TestCase):
         
         # no need to remove walks
         block = MockBlock([CollinearWalk(0, 0, 9, -1)], [None])
-        remove_short_walks(block, self.graph1)
+        remove_short_walks(block, self.graph1, PARAM_m=50)
         self.assertEqual(len(block.collinear_walks), 1)
         self.assertEqual(len(block.match_carrying), 1)
 
         # 2 walks, one to remove
         block = MockBlock([CollinearWalk(0, 1, 8, -1), CollinearWalk(1, 1, 2, 1)],
                           [0, 1])
-        remove_short_walks(block, self.graph1)
+        remove_short_walks(block, self.graph1, PARAM_m=50)
         self.assertEqual(len(block.collinear_walks), 1)
         self.assertEqual(block.match_carrying, [0])
 
         # 2 short walks
         block = MockBlock([CollinearWalk(0, 0, 1, -1), CollinearWalk(1, 1, 2, 1)],
                           [0, 1])
-        remove_short_walks(block, self.graph2)
+        remove_short_walks(block, self.graph2, PARAM_m=50)
         self.assertEqual(len(block.collinear_walks), 0)
         self.assertEqual(len(block.match_carrying), 0)
     
-    @patch.object(block_tools, 'PARAM_m', 50)
-    @patch.object(block_tools, 'PARAM_b', 200)
     def test_scoring_function_big_param_m(self):
         MockBlock = namedtuple('MockBlock', 
                                ['collinear_walks', 'match_carrying', 'scores'])
         
         block = MockBlock([CollinearWalk(0, 0, 0, -1)], [None], Score(0, 0))
-        self.assertEqual(scoring_function(block, self.graph1), 0)
+        score = scoring_function(block, self.graph1, PARAM_b=200, PARAM_m=50)
+        self.assertEqual(score, 0)
         
         block = MockBlock([CollinearWalk(0, 0, 0, -1)], [None], [Score(201, 0)])
-        self.assertEqual(scoring_function(block, self.graph1), 0)
+        score = scoring_function(block, self.graph1, PARAM_b=200, PARAM_m=50)
+        self.assertEqual(score, 0)
 
         block = MockBlock([CollinearWalk(0, 0, 0, -1)], [None], [Score(0, 201)])
-        self.assertEqual(scoring_function(block, self.graph1), 0)
+        score = scoring_function(block, self.graph1, PARAM_b=200, PARAM_m=50)
+        self.assertEqual(score, 0)
         
-    @patch.object(block_tools, 'PARAM_m', 5)
-    @patch.object(block_tools, 'PARAM_b', 10)
+    # @patch.object(block_tools, 'PARAM_m', 5)
+    # @patch.object(block_tools, 'PARAM_b', 10)
     def test_scoring_function_small_params(self):
         MockBlock = namedtuple('MockBlock',
                                ['collinear_walks', 'match_carrying', 'scores'])
-
-        self.assertEqual(block_tools.PARAM_m, 5)
-
         # one-element block with different q1 and q3 values
         block = MockBlock([CollinearWalk(0, 0, 0, -1)], [None], [Score(0, 0)])
-        self.assertEqual(scoring_function(block, self.graph1), 32)
+        score = scoring_function(block, self.graph1, PARAM_b=10, PARAM_m=5)
+        self.assertEqual(score, 32)
 
         block = MockBlock([CollinearWalk(0, 0, 0, 1)], [None], [Score(1, 2)])
-        self.assertEqual(scoring_function(block, self.graph1), 32-9)
+        score = scoring_function(block, self.graph1, PARAM_b=10, PARAM_m=5)
+        self.assertEqual(score, 32-9)
 
         block = MockBlock([CollinearWalk(0, 0, 0, -1)], [None], [Score(11, 0)])
-        self.assertTrue(math.isinf(scoring_function(block, self.graph1)))
+        score = scoring_function(block, self.graph1, PARAM_b=10, PARAM_m=5)
+        self.assertTrue(math.isinf(score))
 
         block = MockBlock([CollinearWalk(0, 0, 0, -1)], [None], [Score(0, 11)])
-        self.assertTrue(math.isinf(scoring_function(block, self.graph1)))
+        score = scoring_function(block, self.graph1, PARAM_b=10, PARAM_m=5)
+        self.assertTrue(math.isinf(score))
 
         # check if block score is a sum of walk's scores
-        block = MockBlock([CollinearWalk(0, 0, 0, -1), CollinearWalk(1, 0, 1, 1)], [None, None], [Score(0, 0), Score(0, 10)])
-        self.assertEqual(scoring_function(block, self.graph1), -38) # -38 = 32+26+4-100
+        block = MockBlock([CollinearWalk(0, 0, 0, -1), CollinearWalk(1, 0, 1, 1)],
+                           [None, None], [Score(0, 0), Score(0, 10)])
+        score = scoring_function(block, self.graph1, PARAM_b=10, PARAM_m=5)
+        self.assertEqual(score, -38) # -38 = 32+26+4-100
 
-        block = MockBlock([CollinearWalk(0, 0, 0, -1), CollinearWalk(1, 0, 1, 1)], [None, None], [Score(0, 0), Score(0, 11)])
-        self.assertTrue(math.isinf(scoring_function(block, self.graph1)))
+        block = MockBlock([CollinearWalk(0, 0, 0, -1), CollinearWalk(1, 0, 1, 1)], 
+                          [None, None], [Score(0, 0), Score(0, 11)])
+        score = scoring_function(block, self.graph1, PARAM_b=10, PARAM_m=5)
+        self.assertTrue(math.isinf(score))
     
 class TestSave(unittest.TestCase):
     def setUp(self):
@@ -207,24 +213,22 @@ class TestSave(unittest.TestCase):
         block1 = MockBlock([CollinearWalk(0, 0, 0, -1), CollinearWalk(1, 0, 1, 1)])
 
         for sort_seeds, suffix in [('no', ''), ('nr_occurrences', '_sort_by_nr_occurrences'), ('length', '_sort_by_length')]:
-            with patch.object(block_tools, 'SORT_SEEDS', sort_seeds):
-            
-                save_blocks_to_gff([empty_block], graph=self.graph2, graph_name=self.graph2.name)
-                blocks_df = pd.read_csv(f'{self.blocks_path}/{self.graph2.name}_{today}{suffix}.gff', sep=',')
-                self.assertEqual(len(blocks_df), 0)
+            save_blocks_to_gff([empty_block], graph=self.graph2, SORT_SEEDS=sort_seeds)
+            blocks_df = pd.read_csv(f'{self.blocks_path}/{self.graph2.name}_{today}{suffix}.gff', sep=',')
+            self.assertEqual(len(blocks_df), 0)
 
-                save_blocks_to_gff([block1], graph=self.graph1, graph_name=self.graph1.name)
-                blocks_df = pd.read_csv(f'{self.blocks_path}/{self.graph1.name}_{today}{suffix}.gff', sep=',')
-                self.assertEqual(len(blocks_df), 2)
-                self.assertTrue(blocks_df['seqname'].tolist(), ['0', '1'])
-                self.assertTrue(blocks_df['source'].unique(), ['final_project'])
-                self.assertTrue(blocks_df['feature'].unique(), ['.'])
-                self.assertTrue(blocks_df['frame'].unique(), ['.'])
-                self.assertTrue(blocks_df['score'].unique(), ['.'])
-                self.assertTrue(blocks_df['attribute'].unique(), ['ID=0'])
-                self.assertTrue(blocks_df['strand'].tolist(), ['-', '+'])
-                self.assertTrue(blocks_df['start'].tolist(), ['0', '0'])
-                self.assertTrue(blocks_df['end'].tolist(), ['32', '4'])
+            save_blocks_to_gff([block1], graph=self.graph1, SORT_SEEDS=sort_seeds)
+            blocks_df = pd.read_csv(f'{self.blocks_path}/{self.graph1.name}_{today}{suffix}.gff', sep=',')
+            self.assertEqual(len(blocks_df), 2)
+            self.assertTrue(blocks_df['seqname'].tolist(), ['0', '1'])
+            self.assertTrue(blocks_df['source'].unique(), ['final_project'])
+            self.assertTrue(blocks_df['feature'].unique(), ['.'])
+            self.assertTrue(blocks_df['frame'].unique(), ['.'])
+            self.assertTrue(blocks_df['score'].unique(), ['.'])
+            self.assertTrue(blocks_df['attribute'].unique(), ['ID=0'])
+            self.assertTrue(blocks_df['strand'].tolist(), ['-', '+'])
+            self.assertTrue(blocks_df['start'].tolist(), ['0', '0'])
+            self.assertTrue(blocks_df['end'].tolist(), ['32', '4'])
 
 if __name__=='__main__':
     unittest.main()

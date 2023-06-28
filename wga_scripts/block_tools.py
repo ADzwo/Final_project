@@ -1,5 +1,4 @@
 import math
-from config import *
 from tuples import *
 from datetime import date
 import pandas as pd
@@ -36,7 +35,8 @@ def walk_length(walk, graph, start=None, end=None):
         return genome_path[end].p_length - genome_path[start-1].p_length
     
 
-def find_vertex_on_path_till_b(graph, walk, v_to_find, proximal, distal):
+def find_vertex_on_path_till_b(graph, walk, v_to_find, v_to_find_orentation, 
+                               proximal, distal, PARAM_b):
     '''
     Function searches for an occurance of vertex with index v_to_find on walk walk.
     The search begins at index proximal and ends at index distal of walk's genome's path.
@@ -50,7 +50,9 @@ def find_vertex_on_path_till_b(graph, walk, v_to_find, proximal, distal):
         if genome_path[i].used==True:
             break
         if v_idx==v_to_find:
-            return i
+            v_orientation = genome_path[i].orientation*walk.orient
+            if v_orientation==v_to_find_orentation:
+                return i
         length += graph.vertices[v_idx].v_length
         if length>=PARAM_b:
             break
@@ -68,7 +70,7 @@ def mark_vertices_as_used(graph, block):
             g_path_pos = genome_path[i]
             genome_path[i] = Path(*(g_path_pos[:-2]), True, g_path_pos[-1])
 
-def remove_short_walks(block, graph):
+def remove_short_walks(block, graph, PARAM_m):
     '''
     Function removes walks shorter than PARAM_m from collinear blocks.
     '''
@@ -80,7 +82,7 @@ def remove_short_walks(block, graph):
     for walk in block.collinear_walks:
         assert walk_length(walk, graph)>=PARAM_m
 
-def scoring_function(block, graph):
+def scoring_function(block, graph, PARAM_m, PARAM_b):
     '''
     Function returns score for a given block in a graph.
     Block's score is a sum of scores of collinear walks.
@@ -99,7 +101,7 @@ def scoring_function(block, graph):
             score += p - (s.q1 + s.q3)**2
     return score
 
-def save_blocks_to_gff(blocks:list, graph, graph_name=None):
+def save_blocks_to_gff(blocks:list, graph, SORT_SEEDS, graph_name=None):
     '''
     Function saves collinear blocks in a .gff file.
     Consecutive columns represent following information about collinear walks.
@@ -128,6 +130,7 @@ def save_blocks_to_gff(blocks:list, graph, graph_name=None):
             walk_ends.append(walk_length(walk, graph)-1)
             assert walk_starts[-1]>=0 and walk_ends[-1]>=0, f'{walk_starts[-1]=}, {walk_ends[-1]=}'
         df = pd.DataFrame.from_records(block.collinear_walks, columns=CollinearWalk._fields)
+        df.drop_duplicates(inplace=True) # <--- TO FIX
         df['attribute'] = f'ID={b_nr}'
         df_all = pd.concat([df_all, df])
     df_all['start'] = walk_starts
