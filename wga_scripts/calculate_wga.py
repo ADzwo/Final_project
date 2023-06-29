@@ -23,11 +23,11 @@ def set_config(a, b, m, sort_seeds):
         f.write(f'PARAM_m = {m}\n')
         f.write(f"SORT_SEEDS = '{sort_seeds}'\n")
 
-def wga(graph_file_path):
+def wga(graph_file_path, SORT_SEEDS):
     var_graph = Graph(graph_file_path)
     blocks = find_collinear_blocks(var_graph)
     print(f'Found {len(blocks)} blocks for graph {graph_file_path}.')
-    save_blocks_to_gff(blocks, graph=var_graph) # , graph_file_path.split('.')[0]
+    save_blocks_to_gff(blocks, graph=var_graph, SORT_SEEDS=SORT_SEEDS) # , graph_file_path.split('.')[0]
     with open(f'vertex_sequences/{var_graph.name}.txt') as f:
         sequences = f.readlines()
     for block_nr, block in enumerate(blocks):
@@ -54,7 +54,7 @@ if __name__=='__main__':
     from graph import Graph
     from block_tools import save_blocks_to_gff
     from find_blocks import find_collinear_blocks
-    wga(args.i)
+    wga(args.i, args.s)
 
 
 # nr_blocks = []

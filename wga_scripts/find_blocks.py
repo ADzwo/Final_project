@@ -4,9 +4,7 @@ from config import *
 from block import CollinearBlock, BlockExtensions
 from block_tools import mark_vertices_as_used, scoring_function, remove_short_walks
 
-def find_collinear_blocks(graph):
-    collinear_blocks = []
-
+def sort_v_idx(graph):
     vertex_indices_order = list(range(len(graph.vertices)))
     if SORT_SEEDS=='nr_occurrences':
         vertex_indices_order = sorted(vertex_indices_order, key=lambda x: len(graph.vertices[x].occurrences), reverse=True)
@@ -14,25 +12,30 @@ def find_collinear_blocks(graph):
         vertex_indices_order = sorted(vertex_indices_order, key=lambda x: graph.vertices[x].v_length, reverse=True)
     else:
         random.shuffle(vertex_indices_order)
-    
+    return vertex_indices_order
+
+def find_collinear_blocks(graph):
+    collinear_blocks = []
+    vertex_indices_order = sort_v_idx(graph)
     for v_idx in vertex_indices_order: # select a vertex --- seed of a new CollinearBlock
         collinear_seeds, carrying_seed_orientation = graph.find_seeds(v_idx)
         if not collinear_seeds:
             continue
         
-        blocks_forward_backward = {}
+        block_dict = {}
         for forward_backward, seeds in zip([1, -1], [collinear_seeds, [CollinearWalk(*s[:-1], -s.orient) for s in collinear_seeds]]):
             best_score = -1
             best_block = None
             new_block = CollinearBlock(v_idx, copy.copy(seeds), carrying_seed_orientation*forward_backward)
-            for walk in new_block.collinear_walks:
-                assert graph.genomes[walk.genome].path[walk.start].vertex in new_block.carrying_path, f'{graph.genomes[walk.genome].path[walk.start].vertex=},\n{new_block.carrying_path=}'
-                assert graph.genomes[walk.genome].path[walk.end].vertex in new_block.carrying_path, f'{graph.genomes[walk.genome].path[walk.start].vertex=},\n{graph.genomes[walk.genome].path[walk.end].vertex=},\n{new_block.carrying_path=}'
+            # for walk in new_block.collinear_walks:
+            #     assert graph.genomes[walk.genome].path[walk.start].vertex in new_block.carrying_path, f'{graph.genomes[walk.genome].path[walk.start].vertex=},\n{new_block.carrying_path=}'
+            #     assert graph.genomes[walk.genome].path[walk.end].vertex in new_block.carrying_path, f'{graph.genomes[walk.genome].path[walk.start].vertex=},\n{graph.genomes[walk.genome].path[walk.end].vertex=},\n{new_block.carrying_path=}'
             new_score = 0
             while new_score>=0:
                 assert len(new_block.match_carrying) == len(new_block.collinear_walks)
                 w0_idx = new_block.carrying_path[-1]
-                Q = BlockExtensions(new_block.collinear_walks, graph, w0_idx) # collinear_walks, graph, w0
+                w0_orientation = new_block.carrying_path_orientations[-1]
+                Q = BlockExtensions(new_block.collinear_walks, graph, w0_idx, w0_orientation) # collinear_walks, graph, w0
                 r = Q.get_carrying_path_extension(graph, new_block.collinear_walks) # r - shortest walk from w0 to t (vertex, orientation), where t - index of the most frequently visited vertex;
                 if not r:
                     break
@@ -40,7 +43,7 @@ def find_collinear_blocks(graph):
                     new_block.carrying_path.append(wi.vertex)
                     new_block.carrying_path_orientations.append(wi.orientation)
                     update_collinear_walks(new_block, wi, Q, graph)
-                    new_score = scoring_function(new_block, graph)
+                    new_score = scoring_function(new_block, graph, PARAM_b=PARAM_b, PARAM_m=PARAM_m)
                     new_block.carrying_path_length_so_far += graph.vertices[wi.vertex].v_length
                     if math.isinf(new_score):
                         break
@@ -51,18 +54,29 @@ def find_collinear_blocks(graph):
                     assert seed.genome==new_block.collinear_walks[s_nr].genome
                 # check_walk_orientations(graph, new_block)
             if best_score>0:
-                blocks_forward_backward[forward_backward] = copy.copy(best_block)
+                block_dict[forward_backward] = copy.copy(best_block)
         
-        if blocks_forward_backward:
-            final_block = merge_blocks_and_postprocess(blocks_forward_backward, graph, len(collinear_seeds))
+        if block_dict:
+            final_block = merge_blocks_and_postprocess(block_dict, graph, len(collinear_seeds))
             # check_walk_orientations(graph, final_block)
             collinear_blocks.append(final_block)
             
     return collinear_blocks
 
+def merge_match_carrying(len_carrying_b, matches_f=None, matches_b=None):
+    if matches_b is None:
+        final_matches = matches_f
+    elif matches_f is None:
+        final_matches = [(-m[0], m[1]) for m in reversed(matches_b)]
+    else:
+        final_matches = [(-m[0], m[1]) for m in reversed(matches_b[1:])]
+        final_matches += matches_f
+    return [(m[0]+len_carrying_b-1, m[1]) for m in final_matches]
 
 def merge_forward_backward_blocks(block_dict, nr_seeds):
-    assert len(block_dict)<3, 'Block list should contain at most two blocks (forward and backward)'
+    if len(block_dict)>=3:
+        raise ValueError(f'Block dict should contain at most two blocks \
+                         (forward and backward) Got {len(block_dict)=}.')
     if len(block_dict)==1:
         return list(block_dict.values())[0]
     if len(block_dict)==2:
@@ -70,79 +84,63 @@ def merge_forward_backward_blocks(block_dict, nr_seeds):
         backward_block = block_dict[-1]
         carrying_b = backward_block.carrying_path
         carrying_orient_b = backward_block.carrying_path_orientations
-
-        assert len(forward_block.match_carrying)==len(forward_block.collinear_walks)
-        assert len(backward_block.match_carrying)==len(backward_block.collinear_walks)
-        
-        # for walk, matches in zip(forward_block.collinear_walks, forward_block.match_carrying):
-        #     match_carrying_check(walk, matches)
-        # for walk, matches in zip(backward_block.collinear_walks, backward_block.match_carrying):
-        #     match_carrying_check(walk, matches)
+        final_block = copy.deepcopy(forward_block)
+        final_block.match_carrying = []
         # Merge common walks
         # TO FIX - merge walks which form a bubble near seeds
         for w_idx in range(nr_seeds):
             walk_f = forward_block.collinear_walks[w_idx]
             walk_b = backward_block.collinear_walks[w_idx]
-            assert walk_f.genome==walk_b.genome, f'Genome should be the same for the seed walks of forward and backward block, got \n {walk_f=},\n {walk_b=}'
-            forward_block.collinear_walks[w_idx] = CollinearWalk(walk_f.genome, min(walk_f.start,walk_b.start), 
+            if walk_f.genome!=walk_b.genome:
+                raise ValueError(f'Genome should be the same for the seed walks of forward and backward block.\
+                                   Got \n {walk_f=},\n {walk_b=}')
+            final_block.collinear_walks[w_idx] = CollinearWalk(walk_f.genome, min(walk_f.start,walk_b.start), 
                                                                  max(walk_f.end,walk_b.end), walk_f.orient)
             matches_f = forward_block.match_carrying[w_idx]
             matches_b = backward_block.match_carrying[w_idx]
-            assert -list(reversed(matches_b))[-1][0]==matches_f[0][0]
-            assert list(reversed(matches_b))[-1][1]==matches_f[0][1]
-            forward_block.match_carrying[w_idx] = ([(-m[0]+len(carrying_b)-1, m[1]) for m in list(reversed(matches_b))[:-1]] 
-                                                 + [(m[0]+len(carrying_b)-1, m[1]) for m in matches_f])
-            # match_carrying_check(forward_block.collinear_walks[w_idx], forward_block.match_carrying[w_idx])
+            final_block.match_carrying.append(merge_match_carrying(len(carrying_b), matches_f, matches_b))
             
         # Merge the remaining elements of match_carrying
-        for w_idx, matches in enumerate(forward_block.match_carrying[nr_seeds:]):
-            forward_block.match_carrying[w_idx+nr_seeds] = [(m[0]+len(carrying_b)-1, m[1]) for m in matches]
+        for matches in forward_block.match_carrying[nr_seeds:]:
+            final_block.match_carrying.append(merge_match_carrying(len(carrying_b), matches_f=matches, matches_b=None))
         for matches in backward_block.match_carrying[nr_seeds:]:
-            forward_block.match_carrying.append([(-m[0]+len(carrying_b)-1, m[1]) for m in list(reversed(matches))])
-
+            final_block.match_carrying.append(merge_match_carrying(len(carrying_b), matches_f=None, matches_b=matches))
+            
         # Merge the remaining walks
         for walk in backward_block.collinear_walks[nr_seeds:]:
-            forward_block.collinear_walks.append(CollinearWalk(*walk[:-1], -walk.orient))
-
-        assert len(forward_block.match_carrying)==len(forward_block.collinear_walks)
-        # for walk, matches in zip(forward_block.collinear_walks, forward_block.match_carrying):
-        #     match_carrying_check(walk, matches)
+            final_block.collinear_walks.append(CollinearWalk(*walk[:-1], -walk.orient))
             
         # merge carrying paths and their orientations
-        assert forward_block.carrying_path[0]==carrying_b[0]
-        assert forward_block.carrying_path_orientations[0]==-carrying_orient_b[0], f'{forward_block.carrying_path_orientations[0]=}, {carrying_orient_b[0]=}'
-        carrying_len = len(forward_block.carrying_path) + len(carrying_orient_b) - 1
-        forward_block.carrying_path = list(reversed(carrying_b))[:-1] + forward_block.carrying_path
-        forward_block.carrying_path_orientations = [-o for o in reversed(carrying_orient_b)][:-1] + forward_block.carrying_path_orientations
-        assert len(forward_block.carrying_path)==len(forward_block.carrying_path_orientations)==carrying_len
-    return forward_block
+        final_block.carrying_path = list(reversed(carrying_b))[:-1] + forward_block.carrying_path
+        final_block.carrying_path_orientations = [-o for o in reversed(carrying_orient_b)][:-1] + forward_block.carrying_path_orientations
+    return final_block
 
-def merge_blocks_and_postprocess(blocks_forward_backward, graph, nr_seeds):
-    final_block = merge_forward_backward_blocks(blocks_forward_backward, nr_seeds)
+def merge_blocks_and_postprocess(block_dict, graph, nr_seeds):
+    final_block = merge_forward_backward_blocks(block_dict, nr_seeds)
     mark_vertices_as_used(graph, final_block)
-    remove_short_walks(final_block, graph)
+    remove_short_walks(final_block, graph, PARAM_m=PARAM_m)
     final_block.remove_doubled_matches()
-    for matches in final_block.match_carrying:
-        for i in range(len(matches)-1):
-            assert matches[i][0]<matches[i+1][0], f'{i=}, {matches[i]=}, {matches[i+1]=}'
     return final_block
 
 def find_walk_to_extend(block, block_extensions, g_idx, g_path, o_nr_on_path, carrying_orient):
     walk_to_extend = None
     orient_on_extension = g_path[o_nr_on_path].orientation
     for e_idx, extension in block_extensions.extensions.items():
-        if extension.genome==g_idx and extension.start<=o_nr_on_path<=extension.end:
-            if extension.orient==carrying_orient*orient_on_extension:
+        if extension.genome==g_idx:
+            walk = block.collinear_walks[e_idx]
+            if walk.start<=o_nr_on_path<=walk.end: # and walk.orient==carrying_orient*orient_on_extension:
+                return -1
+            if extension.start<=o_nr_on_path<=extension.end and extension.orient==carrying_orient*orient_on_extension:
                 if walk_to_extend is None:
                     walk_to_extend = e_idx
                 # if there are multiple walks containing this occurrence of w, 
                 # select the one ending further
                 else:
                     if extension.orient==1:
-                        if block.collinear_walks[e_idx].end>block.collinear_walks[walk_to_extend].end:
+                        if walk.end>block.collinear_walks[walk_to_extend].end:
                             walk_to_extend = e_idx
                     else:
-                        if block.collinear_walks[e_idx].start<block.collinear_walks[walk_to_extend].start:
+                        if walk.start<block.collinear_walks[walk_to_extend].start:
                             walk_to_extend = e_idx
     return walk_to_extend
 
@@ -153,7 +151,6 @@ def update_collinear_walks(block, wi_info, block_extensions, graph): # vertex_in
         # 1) Search for walks, whose extensions contain the occurrence of w
         g_idx = occurrence.genome
         g_path = graph.genomes[g_idx].path
-        g_len = len(g_path)
         o_nr_on_path = occurrence.nr_on_path
         if g_path[o_nr_on_path].used==True:
             continue
@@ -161,10 +158,12 @@ def update_collinear_walks(block, wi_info, block_extensions, graph): # vertex_in
         walk_to_extend = find_walk_to_extend(block, block_extensions, g_idx, g_path, o_nr_on_path, wi_info.orientation)
         # 3a) If the path is found, extend it till w AND update the extension
         if walk_to_extend is not None:
+            if walk_to_extend==-1:
+                continue
             walk = block.collinear_walks[walk_to_extend]
-            assert g_path[walk.end].vertex in block.carrying_path
-            assert g_path[walk.start].vertex in block.carrying_path
-            assert g_path[o_nr_on_path].vertex in block.carrying_path
+            # assert g_path[walk.end].vertex in block.carrying_path
+            # assert g_path[walk.start].vertex in block.carrying_path
+            # assert g_path[o_nr_on_path].vertex in block.carrying_path
             if walk.orient==1:
                 block.collinear_walks[walk_to_extend] = CollinearWalk(walk.genome, walk.start, o_nr_on_path, walk.orient)
             else:
