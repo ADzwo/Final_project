@@ -58,7 +58,6 @@ def find_collinear_blocks(graph):
         
         if block_dict:
             final_block = merge_blocks_and_postprocess(block_dict, graph, len(collinear_seeds))
-            # check_walk_orientations(graph, final_block)
             collinear_blocks.append(final_block)
             
     return collinear_blocks

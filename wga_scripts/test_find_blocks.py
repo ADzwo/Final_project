@@ -29,11 +29,12 @@ def match_carrying_check(walk, matches):
     assert matches[0][1] in {walk.start, walk.end}, f'Walk must start on carrying path. Got {walk=}, {matches[0]=}.'
     assert matches[-1][1] in {walk.start, walk.end}, f'Walk must end on carrying path. Got {walk=}, {matches[-1]=}.'
 
-def check_walk_orientations(graph, block):
+def check_block(graph, block):
     for w_idx, (walk, matches) in enumerate(zip(block.collinear_walks, block.match_carrying)):
         g_idx = walk.genome
         g_path = graph.genomes[g_idx].path
-        walk_start_end_check(walk, genome_length=len(g_path))
+        walk_start_end_check(walk, len(g_path))
+        match_carrying_check(walk, matches)
         for match_carrying, match_walk in matches:
             g_pos = g_path[match_walk]
             carrying_orientation = block.carrying_path_orientations[match_carrying]
@@ -87,15 +88,13 @@ class TestFunctions(unittest.TestCase):
         self.assertEqual([m[1] for m in matches_final], list(range(4, -1, -1)))
 
 
-
 class TestFunctionsGraph(unittest.TestCase):
     def setUp(self):
         self.graph1 = Graph(data_path+'test_data1.gfa')
-        # self.graph2 = Graph(data_path+'test_data2.gfa')
         self.vertex_dict_path = f'{src}/vertex_name_to_idx/'
         self.genome_dict_path = f'{src}/genome_name_to_idx/'
         self.vertex_seq_path = f'{src}/vertex_sequences/'
-        # for graph1
+        
         self.block1 = CollinearBlock(seed_idx=1, 
                                      seed_occurrences=[CollinearWalk(0, 1, 1, 1),
                                                        CollinearWalk(2, 2, 2, -1),
@@ -127,18 +126,19 @@ class TestFunctionsGraph(unittest.TestCase):
                                      carrying_seed_orientation=1)
     
     def tearDown(self):
-        graph = self.graph1
-        # for graph in [self.graph1, self.graph2]:
-        assert os.path.exists(f'{self.vertex_dict_path}/{graph.name}.json')
-        os.remove(f'{self.vertex_dict_path}/{graph.name}.json')
-        assert os.path.exists(f'{self.genome_dict_path}/{graph.name}.json')
-        os.remove(f'{self.genome_dict_path}/{graph.name}.json')
-        assert os.path.exists(f'{self.vertex_seq_path}/{graph.name}.txt')
-        os.remove(f'{self.vertex_seq_path}/{graph.name}.txt')
+        name = self.graph1.name
+        assert os.path.exists(f'{self.vertex_dict_path}/{name}.json')
+        os.remove(f'{self.vertex_dict_path}/{name}.json')
+        assert os.path.exists(f'{self.genome_dict_path}/{name}.json')
+        os.remove(f'{self.genome_dict_path}/{name}.json')
+        assert os.path.exists(f'{self.vertex_seq_path}/{name}.txt')
+        os.remove(f'{self.vertex_seq_path}/{name}.txt')
 
-    # def test_find_collinear_blocks(self):
-    #     graph = None
-    #     blocks = find_collinear_blocks(graph)
+    def test_find_collinear_blocks(self):
+        final_blocks = find_collinear_blocks(self.graph1)
+        for final_block in final_blocks:
+            check_block(self.graph1, final_block)
+        
 
     def test_merge_forward_backward_blocks(self):
         nr_seeds = 3
@@ -207,7 +207,7 @@ class TestFunctionsGraph(unittest.TestCase):
         print(f'{self.block1.carrying_path=}')
         print(f'{self.block1.carrying_path_orientations=}')
         print(f'{self.block1.collinear_walks=}')
-        check_walk_orientations(self.graph1, self.block1)
+        check_block(self.graph1, self.block1)
 
         e = BlockExtensions(self.block3.collinear_walks, self.graph1, 2, -1)
         # mark one occurrence of v_idx 5 as used (genome 2, position 0)
@@ -218,7 +218,7 @@ class TestFunctionsGraph(unittest.TestCase):
         self.assertEqual(self.block3.scores, [(0, 0)])
         for walk, matches in zip(self.block3.collinear_walks, self.block3.match_carrying):
             match_carrying_check(walk, matches)
-        check_walk_orientations(self.graph1, self.block3)
+        check_block(self.graph1, self.block3)
 
         
 if __name__=='__main__':
