@@ -121,10 +121,11 @@ def save_blocks_to_gff(blocks:list, graph, SORT_SEEDS, graph_name=None):
     '''
     gff_cols = ['seqname', 'source', 'feature', 'start', 
                 'end', 'score', 'strand', 'frame', 'attribute']
-    df_all = pd.DataFrame()
-    walk_starts = []
-    walk_ends = []
+    # df_all = pd.DataFrame()
+    df_list = []
     for b_nr, block in enumerate(blocks):
+        walk_starts = []
+        walk_ends = []
         for walk in block.collinear_walks:
             walk_starts.append(walk_length(walk, graph, end=walk.start)-1)
             walk_ends.append(walk_length(walk, graph)-1)
@@ -132,15 +133,17 @@ def save_blocks_to_gff(blocks:list, graph, SORT_SEEDS, graph_name=None):
         df = pd.DataFrame.from_records(block.collinear_walks, columns=CollinearWalk._fields)
         df.drop_duplicates(inplace=True) # <--- TO FIX
         df['attribute'] = f'ID={b_nr}'
-        df_all = pd.concat([df_all, df])
-    df_all['start'] = walk_starts
-    df_all['end'] = walk_ends
+        df['start'] = walk_starts
+        df['end'] = walk_ends
+        df['orient'] = np.where(df['orient']>0, '+', '-')
+        df.rename(columns={'genome':'seqname', 'orient':'strand'}, inplace=True)
+        df_list.append(df)
+    
+    df_all = pd.concat(df_list)
     df_all['source'] = 'final_project'
     df_all['feature'] = '.'
-    df_all['orient'] = np.where(df_all['orient']>0, '+', '-')
     df_all['score'] = '.'
     df_all['frame'] = '.'
-    df_all.rename(columns={'genome':'seqname', 'orient':'strand'}, inplace=True)
     df_all = df_all[gff_cols]
     today = str(date.today()).replace('-', '_')
 
@@ -154,3 +157,4 @@ def save_blocks_to_gff(blocks:list, graph, SORT_SEEDS, graph_name=None):
         name = f'{graph_name}_{today}.gff'
     print(f'{name=}')
     df_all.to_csv(f'blocks/{name}', index=False)
+    return [df[['start', 'end', 'strand']] for df in df_list]

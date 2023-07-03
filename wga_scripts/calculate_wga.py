@@ -1,6 +1,7 @@
 import os
 import sys
 import argparse
+import pandas as pd
 
 os.chdir(sys.path[0])
 os.chdir('../')
@@ -23,16 +24,33 @@ def set_config(a, b, m, sort_seeds):
         f.write(f'PARAM_m = {m}\n')
         f.write(f"SORT_SEEDS = '{sort_seeds}'\n")
 
-def wga(graph_file_path, SORT_SEEDS):
+def save_maf(alignment, maf_file, block_df):
+    maf_file.write('a\n')
+    carrying_label, carrying_string = alignment[0]
+    maf_file.write(f's\t{carrying_label}\t0\t{len(carrying_string)-1}\t+\t{carrying_string}\n')
+
+    assert len(block_df)+1==len(alignment), f'{len(block_df)=}, {len(alignment)=}'
+    block_df['first'] = 's'
+    block_df[['label', 'alignstring']] = pd.DataFrame(alignment[1:])
+    block_df = block_df[['first', 'label', 'start', 'end', 'strand', 'alignstring']]
+    
+    block_df.to_csv(maf_file, sep='\t', index=None, header=None)
+    maf_file.write('\n')
+
+def wga(graph_file_path, SORT_SEEDS, align, _match, _mismatch, _gap):
     var_graph = Graph(graph_file_path)
     blocks = find_collinear_blocks(var_graph)
     print(f'Found {len(blocks)} blocks for graph {graph_file_path}.')
-    save_blocks_to_gff(blocks, graph=var_graph, SORT_SEEDS=SORT_SEEDS) # , graph_file_path.split('.')[0]
+    blocks_df = save_blocks_to_gff(blocks, graph=var_graph, SORT_SEEDS=SORT_SEEDS) # , graph_file_path.split('.')[0]
     with open(f'vertex_sequences/{var_graph.name}.txt') as f:
         sequences = f.readlines()
+    maf_file = open(f'{src}/maf/{var_graph.name}.maf', 'w')
     for block_nr, block in enumerate(blocks):
         print(f'\n ------------ BLOCK NR {block_nr} ------------')
-        poa_align(block, var_graph, sequences, _match=2, _mismatch=-2, _gap=-1)
+        if align==True:
+            alignment = poa_align(block, var_graph, sequences, _match=_match, _mismatch=_mismatch, _gap=_gap)
+            save_maf(alignment, maf_file, blocks_df[block_nr])
+    maf_file.close()
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser()
@@ -48,51 +66,20 @@ if __name__=='__main__':
                         help="Seed sorting mode, default to 'no'. Possible values: \
                         'no' (random vertex order), 'nr_occurrences' (most occurrences first), \
                         'length' (longest labels first).")
+    parser.add_argument('--align', default=True, required=False,
+                        help='Indicates whether to align sequences within blocks (bool). Default to True.')
+    parser.add_argument('--match', default=2, required=False,
+                        help='Match score in alignment (used if --align is True). Default to 2.')
+    parser.add_argument('--mismatch', default=-2, required=False,
+                        help='Mismatch penalty in alignment (used if --align is True). Default to -2.')
+    parser.add_argument('--gap', default=-1, required=False,
+                        help='Gap penalty in alignment (used if --align is True). Default to -1.')
     args = parser.parse_args()
     set_config(args.a, args.b, args.m, args.s)
     from tuples import *
     from graph import Graph
     from block_tools import save_blocks_to_gff
     from find_blocks import find_collinear_blocks
-    wga(args.i, args.s)
+    wga(args.i, args.s, args.align, args.match, args.mismatch, args.gap)
 
 
-# nr_blocks = []
-# for graph_file_path in os.listdir('data'):
-#     for SORT_SEEDS in ['nr_occurrences', 'length', 'no'][:2]:
-#         print(f'{graph_file_path.upper()}, {SORT_SEEDS=}')
-#         var_graph = Graph('data/'+graph_file_path)
-#         blocks = find_collinear_blocks(var_graph)
-#         nr_blocks.append(len(blocks))
-#         save_blocks_to_gff(blocks, graph_file_path.split('.')[0], var_graph)
-#         with open(f'vertex_sequences/{var_graph.name}.txt') as f:
-#             sequences = f.readlines()
-
-#         for block_nr, block in enumerate(blocks):
-#             print(f'\n ------------ BLOCK NR {block_nr} ------------')
-#             for walk in block.collinear_walks:
-#                 assert var_graph.genomes[walk.genome].path[walk.start].vertex in block.carrying_path, f'{var_graph.genomes[walk.genome].path[walk.start].vertex=}'
-#                 assert var_graph.genomes[walk.genome].path[walk.end].vertex in block.carrying_path, f'{var_graph.genomes[walk.genome].path[walk.end].vertex=}'
-            
-#             poa_align(block, var_graph, sequences, _match=2, _mismatch=-2, _gap=-1)
-# print(f'Number of blocks for consecutive options:\n{nr_blocks}')
-
-# # additional check
-# SORT_SEEDS = 'no'
-# for graph_file_path in os.listdir('data'):
-#     for i in range(10):
-#         print(f'{graph_file_path.upper()}, {SORT_SEEDS=}')
-#         var_graph = Graph('data/'+graph_file_path)
-#         blocks = find_collinear_blocks(var_graph)
-#         nr_blocks.append(len(blocks))
-#         save_blocks_to_gff(blocks, graph_file_path.split('.')[0], var_graph)
-#         with open(f'vertex_sequences/{var_graph.name}.txt') as f:
-#             sequences = f.readlines()
-
-#         for block_nr, block in enumerate(blocks):
-#             print(f'BLOCK NR {block_nr}')
-#             for walk in block.collinear_walks:
-#                 assert var_graph.genomes[walk.genome].path[walk.start].vertex in block.carrying_path, f'{var_graph.genomes[walk.genome].path[walk.start].vertex=}'
-#                 assert var_graph.genomes[walk.genome].path[walk.end].vertex in block.carrying_path, f'{var_graph.genomes[walk.genome].path[walk.end].vertex=}'
-#             poa_align(block, var_graph, sequences, _match=2, _mismatch=-2, _gap=-1)
-# print(f'Number of blocks for consecutive options:\n{nr_blocks}')
