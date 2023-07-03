@@ -37,7 +37,8 @@ class Graph:
         vertex_name_to_idx = {} # dict to save {vertex id from gfa file: index in Graph.vertices}
         genome_name_to_idx = {}
         sequences = []
-        self.name = re.split(r'[\.\/]', graph_file_path)[-2]
+        self.name = re.split(r'[\/]', graph_file_path)[-1]
+        self.name = re.split(r'\.', self.name)[0]
 
         # find S lines and fill vertex_name_to_idx dict 
         with open(graph_file_path,'r') as graph_file:

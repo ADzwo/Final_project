@@ -101,7 +101,16 @@ def scoring_function(block, graph, PARAM_m, PARAM_b):
             score += p - (s.q1 + s.q3)**2
     return score
 
-def save_blocks_to_gff(blocks:list, graph, SORT_SEEDS, graph_name=None):
+def get_file_name(graph_name, SORT_SEEDS, extension):
+    today = str(date.today()).replace('-', '_')
+    if SORT_SEEDS=='nr_occurrences':
+        return f'{graph_name}_{today}_sort_by_nr_occurrences.{extension}'
+    elif SORT_SEEDS=='length':
+        return f'{graph_name}_{today}_sort_by_length.{extension}'
+    else:
+        return f'{graph_name}_{today}.{extension}'
+
+def save_blocks_to_gff(blocks:list, graph, SORT_SEEDS):
     '''
     Function saves collinear blocks in a .gff file.
     Consecutive columns represent following information about collinear walks.
@@ -145,16 +154,7 @@ def save_blocks_to_gff(blocks:list, graph, SORT_SEEDS, graph_name=None):
     df_all['score'] = '.'
     df_all['frame'] = '.'
     df_all = df_all[gff_cols]
-    today = str(date.today()).replace('-', '_')
 
-    if graph_name is None:
-        graph_name = graph.name
-    if SORT_SEEDS=='nr_occurrences':
-        name = f'{graph_name}_{today}_sort_by_nr_occurrences.gff'
-    elif SORT_SEEDS=='length':
-        name = f'{graph_name}_{today}_sort_by_length.gff'
-    else:
-        name = f'{graph_name}_{today}.gff'
-    print(f'{name=}')
+    name = get_file_name(graph.name, SORT_SEEDS, 'gff')
     df_all.to_csv(f'blocks/{name}', index=False)
     return [df[['start', 'end', 'strand']] for df in df_list]

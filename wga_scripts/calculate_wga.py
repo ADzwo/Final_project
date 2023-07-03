@@ -2,12 +2,14 @@ import os
 import sys
 import argparse
 import pandas as pd
+from block_tools import get_file_name
 
 os.chdir(sys.path[0])
 os.chdir('../')
 src = os.getcwd()
 print(f'PWD={src}') # Reading_graphs
 assert 'data' in os.listdir()
+maf_path = f'{src}/maf/'
 
 assert os.path.exists(os.getcwd()+'/../poapy/'), 'Move to the root directory (the one containing README).'
 sys.path.append(os.getcwd()+'/../poapy/')
@@ -29,7 +31,8 @@ def save_maf(alignment, maf_file, block_df):
     carrying_label, carrying_string = alignment[0]
     maf_file.write(f's\t{carrying_label}\t0\t{len(carrying_string)-1}\t+\t{carrying_string}\n')
 
-    assert len(block_df)+1==len(alignment), f'{len(block_df)=}, {len(alignment)=}'
+    if len(block_df)+1!=len(alignment):
+        raise ValueError(f'Block size + 1 and alignment size should be equal. Got {len(block_df)+1=}, {len(alignment)=}')
     block_df['first'] = 's'
     block_df[['label', 'alignstring']] = pd.DataFrame(alignment[1:])
     block_df = block_df[['first', 'label', 'start', 'end', 'strand', 'alignstring']]
@@ -44,7 +47,8 @@ def wga(graph_file_path, SORT_SEEDS, align, _match, _mismatch, _gap):
     blocks_df = save_blocks_to_gff(blocks, graph=var_graph, SORT_SEEDS=SORT_SEEDS) # , graph_file_path.split('.')[0]
     with open(f'vertex_sequences/{var_graph.name}.txt') as f:
         sequences = f.readlines()
-    maf_file = open(f'{src}/maf/{var_graph.name}.maf', 'w')
+    name = get_file_name(var_graph.name, SORT_SEEDS, 'maf')
+    maf_file = open(f'{maf_path}{name}.maf', 'w')
     for block_nr, block in enumerate(blocks):
         print(f'\n ------------ BLOCK NR {block_nr} ------------')
         if align==True:
@@ -80,6 +84,10 @@ if __name__=='__main__':
     from graph import Graph
     from block_tools import save_blocks_to_gff
     from find_blocks import find_collinear_blocks
+
+    if args.align==True:
+        if not os.path.exists(maf_path):
+            os.mkdir(maf_path)
     wga(args.i, args.s, args.align, args.match, args.mismatch, args.gap)
 
 
