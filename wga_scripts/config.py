@@ -1,4 +1,0 @@
-PARAM_a = 30
-PARAM_b = 200
-PARAM_m = 50
-SORT_SEEDS = 'no'

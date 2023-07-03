@@ -1,8 +1,6 @@
 import re
 import json
-
 from tuples import *
-from config import *
 
 class Genome:
     path: list # Path: vertex index: int, orientation: int, used: bool
@@ -84,7 +82,7 @@ class Graph:
             return v_name, v_sequence
         return None, None
 
-    def find_seeds(self, v_idx):
+    def find_seeds(self, v_idx, PARAM_a):
         '''
         Function finds all occurrences of vertex v_idx, which have not been used before.
         If such occurrences exist, function returns a tuple containing:

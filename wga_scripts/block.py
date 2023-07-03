@@ -1,5 +1,4 @@
 from tuples import *
-from config import *
 from block_tools import walk_length, find_vertex_on_path_till_b
 
 class CollinearBlock:
@@ -42,7 +41,7 @@ class BlockExtensions:
     shortest_walk: dict  # {vertex index: (distance, *shortest_walk)}
                     # distance - length of the shortest walk from w_0
                     # shortest_walk (walk number, start, end)
-    def __init__(self, collinear_walks, graph, w0_idx, w0_orientation):
+    def __init__(self, collinear_walks, graph, w0_idx, w0_orientation, PARAM_b):
         self.extensions = {}
         self.coverage = {}
         self.shortest_walk = {}
@@ -143,7 +142,7 @@ class BlockExtensions:
             r.append(CarryingPathExtension(g_path_pos.vertex, g_path_pos.orientation*walk.orient))
         return r
 
-    def update_extension(self, walk, graph, walk_idx):
+    def update_extension(self, walk, graph, walk_idx, PARAM_b):
         g_idx = walk.genome
         genome = graph.genomes[g_idx]
         g_len = len(genome.path)
