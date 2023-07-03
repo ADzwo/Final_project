@@ -2,8 +2,8 @@
 from __future__ import print_function
 import poagraph
 import seqgraphalignment
-import simplefasta
-from collections import defaultdict, namedtuple
+from collections import namedtuple
+import os
 
 complement_dict = {'A':'T', 'C':'G', 'T':'A', 'G':'C'}
 AlignmentTuple = namedtuple('AlignmentTuple', ['sequence', 'stringidxs', 'nodeidxs'])
@@ -15,8 +15,6 @@ def reverse_complement(seq):
     return seq_complement
 
 def find_edges_between(graph, start, end, walks_to_poa):
-    print('FIND EDGES BETWEEN')
-    print(f'{start=}, {end=}')
     node = graph.nodedict[start]
     walks_to_align = {w_idx for e in node.outEdges for w_idx in node.outEdges[e].labels}
     node = graph.nodedict[end]
@@ -87,18 +85,11 @@ def add_to_alignment(old_alignment, new_alignment, seq_len_so_far):
 
 def poa_align(block, var_graph, sequences, _match, _mismatch, _gap, html=True, globalAlign=True, simple=True):
     carrying_to_poa, carrying_seq = carrying_to_poa_idx(block, sequences)
-    print(f'{len(carrying_to_poa)=}')
-    print(f'{len(carrying_seq)=}')
-    print(f'{carrying_seq=}')
-    print(f'{carrying_to_poa=}')
     graph = poagraph.POAGraph(carrying_seq, -1) # carrying path
-    print_alignment(graph)
-
     walks_to_poa = {}
     entire_sequences = []
 
     for w_idx in range(len(block.collinear_walks)):
-        print(f'ALIGN WALK {w_idx}')
         walk = block.collinear_walks[w_idx]
         matches = block.match_carrying[w_idx]
 
@@ -117,11 +108,8 @@ def poa_align(block, var_graph, sequences, _match, _mismatch, _gap, html=True, g
             old_alignment = align_matching_fragment(start_nid, end_nid, entire_sequence, 0, None)
             entire_sequences.append(entire_sequence)
             old_alignment = AlignmentTuple(*old_alignment)
-            print('INCORPORATE SEQUENCE-GRAPH ALIGNMENT')
             walks_to_poa[w_idx] = graph.incorporateSeqAlignment(old_alignment, entire_sequence, label=w_idx)
             assert len(walks_to_poa[w_idx])>0
-            print(f'ALIGNMENT AFTER ADDING WALK {w_idx}')
-            print_alignment(graph)
             continue
         
         first = True
@@ -138,15 +126,14 @@ def poa_align(block, var_graph, sequences, _match, _mismatch, _gap, html=True, g
                 sequence += read_sequence(sequences, v_idx, v_orientation, walk.orient)
                 i_on_g_path += walk.orient
             elif sequence=='': # there is a match and we do not need to align anything
-                print(f'ALIGN TO MATCHING VERTEX FROM CARRYING PATH')
                 match_carrying = matches[i_on_match][0]
                 start_nid, end_nid = carrying_to_poa[match_carrying]
-                print(f'{start_nid=}, {end_nid=}')
                 assert start_nid<=end_nid
                 assert v_orientation*walk.orient==block.carrying_path_orientations[match_carrying]
                 sequence = read_sequence(sequences, v_idx, v_orientation, walk.orient)
-                assert sequence==carrying_seq[start_nid:end_nid+1], f'{sequence=}, \n{sequences[v_idx].strip()=}, \n{carrying_seq[start_nid:end_nid+1]=}, \n{carrying_seq=}, \n{walk.orient*v_orientation=}, {matches[i_on_match][0]=}'
-                # sequence = carrying_seq[start_nid:end_nid+1]
+                assert sequence==carrying_seq[start_nid:end_nid+1], f'{sequence=}, \
+                    \n{sequences[v_idx].strip()=}, \n{carrying_seq[start_nid:end_nid+1]=}, \
+                    \n{carrying_seq=}, \n{walk.orient*v_orientation=}, {matches[i_on_match][0]=}'
 
                 old_alignment = align_matching_fragment(start_nid, end_nid, sequence, len(entire_sequence), old_alignment)
                 i_on_match += 1
@@ -156,15 +143,12 @@ def poa_align(block, var_graph, sequences, _match, _mismatch, _gap, html=True, g
                 first = False
             else:
                 assert first == False
-                print(f'ALIGN')
-                print(f'{sequence=}')
                 last_match = matches[i_on_match-1]
                 match = matches[i_on_match]
                 assert last_match[0]<=match[0], f'{last_match=}, {match=}'
                 
                 start_nid = carrying_to_poa[last_match[0]][1] # the last node of last_match
                 end_nid = carrying_to_poa[match[0]][0] # the first node of match
-                print(f'{start_nid=}, {end_nid=}')
                 assert start_nid<=end_nid, f'{last_match[0]=}, {match[0]=}, {start_nid=}, {end_nid=}'
                 assert last_match[0]<match[0], f'last_match[0] should be smaller than match[0]. Got {last_match=}, {match=}.'
                 
@@ -184,29 +168,11 @@ def poa_align(block, var_graph, sequences, _match, _mismatch, _gap, html=True, g
                 sequence = ''
             
         entire_sequences.append(entire_sequence)
-        print(f'Appending sequence for {w_idx=}')
 
-        print('final alignment:', *old_alignment, sep='\n')
         old_alignment = AlignmentTuple(*old_alignment)
-        print('INCORPORATE SEQUENCE-GRAPH ALIGNMENT')
         walks_to_poa[w_idx] = graph.incorporateSeqAlignment(old_alignment, entire_sequence, label=w_idx)
         assert len(walks_to_poa[w_idx])>0
 
-        print(f'ALIGNMENT AFTER ADDING WALK {w_idx}')
-        print_alignment(graph)
-
-
-    print('GENERATE ALIGNMENT STRINGS')
     alignments = graph.generateAlignmentStrings()
-    for label, alignstring in alignments:
-        print("{0:15s} {1:s}".format(str(label), alignstring))
-    print(f'carying_path, {carrying_seq=}')
-    print(f'{carrying_to_poa=}')
-    for w_idx in range(len(entire_sequences)):
-        print(f'{w_idx=}, {entire_sequences[w_idx]=}')
-        
+    return alignments
 
-
-
-    # if html is not None:
-    #     graph.htmlOutput(html)
