@@ -130,17 +130,22 @@ def save_blocks_to_gff(blocks:list, graph, SORT_SEEDS):
     '''
     gff_cols = ['seqname', 'source', 'feature', 'start', 
                 'end', 'score', 'strand', 'frame', 'attribute']
-    # df_all = pd.DataFrame()
     df_list = []
     for b_nr, block in enumerate(blocks):
         walk_starts = []
         walk_ends = []
         for walk in block.collinear_walks:
-            walk_starts.append(walk_length(walk, graph, end=walk.start)-1)
-            walk_ends.append(walk_length(walk, graph)-1)
+            g_idx = walk.genome
+            genome_path = graph.genomes[g_idx].path
+            walk_starts.append(genome_path[walk.start].p_length-1)
+            walk_ends.append(genome_path[walk.end].p_length-1)
+            # walk_starts.append(walk_length(walk, graph, start=0, end=walk.start)-1)
+            # walk_ends.append(walk_length(walk, graph, start=0)-1)
             assert walk_starts[-1]>=0 and walk_ends[-1]>=0, f'{walk_starts[-1]=}, {walk_ends[-1]=}'
         df = pd.DataFrame.from_records(block.collinear_walks, columns=CollinearWalk._fields)
-        df.drop_duplicates(inplace=True) # <--- TO FIX
+        if len(df)!=len(df.drop_duplicates()):
+            print(f'{len(df)=} != {len(df.drop_duplicates())=}')
+            df.drop_duplicates(inplace=True) # <--- TO FIX
         df['attribute'] = f'ID={b_nr}'
         df['start'] = walk_starts
         df['end'] = walk_ends

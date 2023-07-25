@@ -13,12 +13,9 @@ class Vertex:
     length: int # length of the represented sequence
     occurrences: list # occurrence: genome index, index on its path
 
-    def __init__(self, length, occurrences=None):
+    def __init__(self, length):
         self.v_length = length
-        if not occurrences:
-            self.occurrences = []
-        else:
-            self.occurrences = occurrences
+        self.occurrences = []
 
     def add_occurrence(self, g_idx, nr_on_path):
         self.occurrences.append(occurrence(g_idx, nr_on_path))
@@ -33,13 +30,13 @@ class Graph:
         self.vertices = []
         self.genomes = []
         vertex_name_to_idx = {} # dict to save {vertex id from gfa file: index in Graph.vertices}
-        genome_name_to_idx = {}
+        genome_idx_to_name = {}
         sequences = []
         self.name = re.split(r'[\/]', graph_file_path)[-1]
         self.name = re.split(r'\.', self.name)[0]
 
         # find S lines and fill vertex_name_to_idx dict 
-        with open(graph_file_path,'r') as graph_file:
+        with open(graph_file_path, 'r') as graph_file:
             for line in graph_file.readlines():
                 if line.startswith('S'):
                     v_name, v_sequence = self.add_vertex(line)
@@ -50,7 +47,7 @@ class Graph:
             f.writelines(sequences)
             del sequences
         # find P lines and fill genome_name_to_idx dict 
-        with open(graph_file_path,'r') as graph_file:
+        with open(graph_file_path, 'r') as graph_file:
             for line in graph_file.readlines():
                 if line.startswith('P'): # or 'W'
                     g = line.strip().split() # P, name, vertices' names, overlaps
@@ -65,13 +62,13 @@ class Graph:
                         self.vertices[v_idx].add_occurrence(len(self.genomes), v_pos) # genome, nr_on_path
                         p_length += self.vertices[v_idx].v_length
                         path.append(Path(v_idx, v_orientation, False, p_length))
-                    genome_name_to_idx[g[1]] = len(self.genomes)
+                    genome_idx_to_name[len(self.genomes)] = g[1]
                     self.genomes.append(Genome(path))
         # save dictionaries to .json files
         with open(f'vertex_name_to_idx/{self.name}.json', 'w') as f:
             json.dump(vertex_name_to_idx, f)
-        with open(f'genome_name_to_idx/{self.name}.json', 'w') as f:
-            json.dump(genome_name_to_idx, f)
+        with open(f'genome_idx_to_name/{self.name}.json', 'w') as f:
+            json.dump(genome_idx_to_name, f)
           
     def add_vertex(self, line):
         v = line.strip().split()

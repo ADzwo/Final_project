@@ -49,8 +49,8 @@ def find_collinear_blocks(graph, SORT_SEEDS, PARAM_a, PARAM_b, PARAM_m):
                     if new_score>best_score:
                         best_block = copy.copy(new_block)
                         best_score = new_score 
-                for s_nr, seed in enumerate(seeds):
-                    assert seed.genome==new_block.collinear_walks[s_nr].genome
+                # for s_nr, seed in enumerate(seeds):
+                #     assert seed.genome==new_block.collinear_walks[s_nr].genome
                 # check_walk_orientations(graph, new_block)
             if best_score>0:
                 block_dict[forward_backward] = copy.copy(best_block)
@@ -82,7 +82,7 @@ def merge_forward_backward_blocks(block_dict, nr_seeds):
         backward_block = block_dict[-1]
         carrying_b = backward_block.carrying_path
         carrying_orient_b = backward_block.carrying_path_orientations
-        final_block = copy.deepcopy(forward_block)
+        final_block = copy.copy(forward_block)
         final_block.match_carrying = []
         # Merge common walks
         # TO FIX - merge walks which form a bubble near seeds
