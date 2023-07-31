@@ -12,7 +12,6 @@ os.chdir(sys.path[0])
 os.chdir('../')
 src = os.getcwd()
 print(f'PWD={src}') # Reading_graphs
-assert 'data' in os.listdir()
 maf_path = f'{src}/maf/'
 
 assert os.path.exists(os.getcwd()+'/../poapy/'), 'Move to the root directory (the one containing README).'
