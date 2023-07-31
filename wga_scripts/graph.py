@@ -25,6 +25,7 @@ class Graph:
     genomes: list # list of Genome objects
     vertices: list # list of Vertex objects
     name: str
+    genome_lengths: list # list of genome lengths
 
     def __init__(self, graph_file_path):
         self.vertices = []
@@ -64,6 +65,7 @@ class Graph:
                         path.append(Path(v_idx, v_orientation, False, p_length))
                     genome_idx_to_name[len(self.genomes)] = g[1]
                     self.genomes.append(Genome(path))
+        self.genome_lengths = [g.path[-1].p_length for g in self.genomes]
         # save dictionaries to .json files
         with open(f'vertex_name_to_idx/{self.name}.json', 'w') as f:
             json.dump(vertex_name_to_idx, f)

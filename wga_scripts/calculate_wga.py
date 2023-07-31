@@ -5,8 +5,8 @@ import json
 import pandas as pd
 from tuples import *
 from graph import Graph
-from block_tools import get_file_name, save_blocks_to_gff
-from find_blocks import find_collinear_blocks
+from block_tools import get_file_name, sort_v_idx, save_block_to_gff
+from find_blocks import find_collinear_block
 
 os.chdir(sys.path[0])
 os.chdir('../')
@@ -44,25 +44,29 @@ def save_maf(alignment, maf_file, block_df, genome_lengths, walks, genome_idx_to
 
 def wga(graph_file_path, SORT_SEEDS, align, _match, _mismatch, _gap, a, b, m):
     var_graph = Graph(graph_file_path)
-    blocks = find_collinear_blocks(var_graph, SORT_SEEDS, PARAM_a=a, PARAM_b=b, PARAM_m=m)
-    print(f'Found {len(blocks)} blocks for graph {graph_file_path}.')
-    blocks_df = save_blocks_to_gff(blocks, graph=var_graph, SORT_SEEDS=SORT_SEEDS)
+    name = get_file_name(var_graph.name, SORT_SEEDS, 'maf')
+    maf_file = open(f'{maf_path}{name}', 'w')
+    print(f'maf_file = {maf_path}{name}')
+    maf_file.write('##maf version=1 scoring=tba.v8\n\n')
+    vertex_indices_order = sort_v_idx(var_graph, SORT_SEEDS)
+    block_nr = 0
     with open(f'vertex_sequences/{var_graph.name}.txt') as f:
         sequences = f.readlines()
-    name = get_file_name(var_graph.name, SORT_SEEDS, 'maf')
-
-    # blocks = sorted(blocks, key=lambda x: x.) <--- TO FIX The alignment blocks in the file must be sorted by start position
-    genome_lengths = [g.path[-1].p_length for g in var_graph.genomes]
     with open(f'genome_idx_to_name/{var_graph.name}.json', 'r') as f:
             genome_idx_to_name = json.load(f)
-    maf_file = open(f'{maf_path}{name}', 'w')
-    maf_file.write('##maf version=1 scoring=tba.v8\n\n')
-    for block_nr, block in enumerate(blocks):
-        if align==True:
-            print(f'\n ------------ ALIGN BLOCK NR {block_nr} ------------')
-            alignment = poa_align(block, var_graph, sequences, _match=_match, _mismatch=_mismatch, _gap=_gap)
-            save_maf(alignment, maf_file, blocks_df[block_nr], genome_lengths, block.collinear_walks, genome_idx_to_name)
+    for v_idx in vertex_indices_order: # select a vertex --- seed of a new CollinearBlock
+        block = find_collinear_block(var_graph, v_idx, PARAM_a=a, PARAM_b=b, PARAM_m=m)
+        if block is not None: # save block and its alignment
+            block_nr += 1
+            block_df = save_block_to_gff(block, graph=var_graph, SORT_SEEDS=SORT_SEEDS, block_nr=block_nr)
+            if align==True:
+                print(f'\n ------------ ALIGN BLOCK NR {block_nr} ------------')
+                alignment = poa_align(block, var_graph, sequences, _match=_match, _mismatch=_mismatch, _gap=_gap)
+                save_maf(alignment, maf_file, block_df, var_graph.genome_lengths, block.collinear_walks, genome_idx_to_name)
+                del block_df, block, alignment
     maf_file.close()
+    print(f'Found {block_nr} blocks for graph {graph_file_path}.')
+
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser()

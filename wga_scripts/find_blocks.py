@@ -1,65 +1,46 @@
-import math, random, copy
+import math, copy
 from tuples import *
 from block import CollinearBlock, BlockExtensions
-from block_tools import mark_vertices_as_used, scoring_function, remove_short_walks
+from block_tools import mark_vertices_as_used, scoring_function, remove_short_walks#, save_block_to_gff, save_maf
 
-def sort_v_idx(graph, SORT_SEEDS):
-    vertex_indices_order = list(range(len(graph.vertices)))
-    if SORT_SEEDS=='nr_occurrences':
-        vertex_indices_order = sorted(vertex_indices_order, key=lambda x: len(graph.vertices[x].occurrences), reverse=True)
-    elif SORT_SEEDS=='length':
-        vertex_indices_order = sorted(vertex_indices_order, key=lambda x: graph.vertices[x].v_length, reverse=True)
-    else:
-        random.shuffle(vertex_indices_order)
-    return vertex_indices_order
 
-def find_collinear_blocks(graph, SORT_SEEDS, PARAM_a, PARAM_b, PARAM_m):
-    collinear_blocks = []
-    vertex_indices_order = sort_v_idx(graph, SORT_SEEDS)
-    for v_idx in vertex_indices_order: # select a vertex --- seed of a new CollinearBlock
-        collinear_seeds, carrying_seed_orientation = graph.find_seeds(v_idx, PARAM_a=PARAM_a)
-        if not collinear_seeds:
-            continue
-        
-        block_dict = {}
-        for forward_backward, seeds in zip([1, -1], [collinear_seeds, [CollinearWalk(*s[:-1], -s.orient) for s in collinear_seeds]]):
-            best_score = -1
-            best_block = None
-            new_block = CollinearBlock(v_idx, copy.copy(seeds), carrying_seed_orientation*forward_backward)
-            # for walk in new_block.collinear_walks:
-            #     assert graph.genomes[walk.genome].path[walk.start].vertex in new_block.carrying_path, f'{graph.genomes[walk.genome].path[walk.start].vertex=},\n{new_block.carrying_path=}'
-            #     assert graph.genomes[walk.genome].path[walk.end].vertex in new_block.carrying_path, f'{graph.genomes[walk.genome].path[walk.start].vertex=},\n{graph.genomes[walk.genome].path[walk.end].vertex=},\n{new_block.carrying_path=}'
-            new_score = 0
-            while new_score>=0:
-                assert len(new_block.match_carrying) == len(new_block.collinear_walks)
-                w0_idx = new_block.carrying_path[-1]
-                w0_orientation = new_block.carrying_path_orientations[-1]
-                Q = BlockExtensions(new_block.collinear_walks, graph, w0_idx, w0_orientation, PARAM_b=PARAM_b) # collinear_walks, graph, w0
-                r = Q.get_carrying_path_extension(graph, new_block.collinear_walks) # r - shortest walk from w0 to t (vertex, orientation), where t - index of the most frequently visited vertex;
-                if not r:
+def find_collinear_block(graph, v_idx, PARAM_a, PARAM_b, PARAM_m):
+    collinear_seeds, carrying_seed_orientation = graph.find_seeds(v_idx, PARAM_a=PARAM_a)
+    if not collinear_seeds:
+        return None
+    block_dict = {}
+    for forward_backward, seeds in zip([1, -1], [collinear_seeds, [CollinearWalk(*s[:-1], -s.orient) for s in collinear_seeds]]):
+        best_score = 0
+        best_block = None
+        new_block = CollinearBlock(v_idx, copy.copy(seeds), carrying_seed_orientation*forward_backward)
+        new_score = 0
+        while new_score>=0:
+            assert len(new_block.match_carrying) == len(new_block.collinear_walks)
+            w0_idx = new_block.carrying_path[-1]
+            w0_orientation = new_block.carrying_path_orientations[-1]
+            Q = BlockExtensions(new_block.collinear_walks, graph, w0_idx, w0_orientation, PARAM_b=PARAM_b) # collinear_walks, graph, w0
+            r = Q.get_carrying_path_extension(graph, new_block.collinear_walks) # r - shortest walk from w0 to t (vertex, orientation), where t - index of the most frequently visited vertex;
+            if not r:
+                break
+            for wi in r:
+                new_block.carrying_path.append(wi.vertex)
+                new_block.carrying_path_orientations.append(wi.orientation)
+                update_collinear_walks(new_block, wi, Q, graph, PARAM_b=PARAM_b)
+                new_score = scoring_function(new_block, graph, PARAM_b=PARAM_b, PARAM_m=PARAM_m)
+                new_block.carrying_path_length_so_far += graph.vertices[wi.vertex].v_length
+                if math.isinf(new_score):
                     break
-                for wi in r:
-                    new_block.carrying_path.append(wi.vertex)
-                    new_block.carrying_path_orientations.append(wi.orientation)
-                    update_collinear_walks(new_block, wi, Q, graph, PARAM_b=PARAM_b)
-                    new_score = scoring_function(new_block, graph, PARAM_b=PARAM_b, PARAM_m=PARAM_m)
-                    new_block.carrying_path_length_so_far += graph.vertices[wi.vertex].v_length
-                    if math.isinf(new_score):
-                        break
-                    if new_score>best_score:
-                        best_block = copy.copy(new_block)
-                        best_score = new_score 
-                # for s_nr, seed in enumerate(seeds):
-                #     assert seed.genome==new_block.collinear_walks[s_nr].genome
-                # check_walk_orientations(graph, new_block)
-            if best_score>0:
-                block_dict[forward_backward] = copy.copy(best_block)
-        
-        if block_dict:
-            final_block = merge_blocks_and_postprocess(block_dict, graph, len(collinear_seeds), PARAM_m=PARAM_m)
-            collinear_blocks.append(final_block)
-            
-    return collinear_blocks
+                if new_score>best_score:
+                    best_block = copy.copy(new_block)
+                    best_score = new_score
+        if best_score>0:
+            block_dict[forward_backward] = copy.copy(best_block)
+    
+    if block_dict:
+        final_block = merge_blocks_and_postprocess(block_dict, graph, len(collinear_seeds), PARAM_m=PARAM_m)
+        return final_block
+    else:
+        return None
 
 def merge_match_carrying(len_carrying_b, matches_f=None, matches_b=None):
     if matches_b is None:

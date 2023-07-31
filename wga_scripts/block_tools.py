@@ -1,9 +1,20 @@
-import math
+import math, random
 from tuples import *
 from datetime import date
 import pandas as pd
 import numpy as np
 
+def sort_v_idx(graph, SORT_SEEDS):
+    vertex_indices_order = list(range(len(graph.vertices)))
+    if SORT_SEEDS=='nr_occurrences':
+        vertex_indices_order = sorted(vertex_indices_order, key=lambda x: len(graph.vertices[x].occurrences), reverse=True)
+    elif SORT_SEEDS=='length':
+        vertex_indices_order = sorted(vertex_indices_order, key=lambda x: graph.vertices[x].v_length, reverse=True)
+    else:
+        random.shuffle(vertex_indices_order)
+    return vertex_indices_order
+
+    
 def walk_length(walk, graph, start=None, end=None):
     '''
     Function returns length of a walk in a graph (in nucleotides).
@@ -139,8 +150,6 @@ def save_blocks_to_gff(blocks:list, graph, SORT_SEEDS):
             genome_path = graph.genomes[g_idx].path
             walk_starts.append(genome_path[walk.start].p_length-1)
             walk_ends.append(genome_path[walk.end].p_length-1)
-            # walk_starts.append(walk_length(walk, graph, start=0, end=walk.start)-1)
-            # walk_ends.append(walk_length(walk, graph, start=0)-1)
             assert walk_starts[-1]>=0 and walk_ends[-1]>=0, f'{walk_starts[-1]=}, {walk_ends[-1]=}'
         df = pd.DataFrame.from_records(block.collinear_walks, columns=CollinearWalk._fields)
         if len(df)!=len(df.drop_duplicates()):
@@ -163,3 +172,55 @@ def save_blocks_to_gff(blocks:list, graph, SORT_SEEDS):
     name = get_file_name(graph.name, SORT_SEEDS, 'gff')
     df_all.to_csv(f'blocks/{name}', index=False)
     return [df[['start', 'end', 'strand']] for df in df_list]
+
+def save_block_to_gff(block, graph, SORT_SEEDS, block_nr):
+    '''
+    Function saves a collinear block in a .gff file.
+    The block is appended to an existing .csv file
+    Consecutive columns represent following information about collinear walks.
+    - seqname: genome id
+    - source: software name
+    - feature: '.'
+    - start: start position in the genome
+    - end: end position in the genome
+    - score: '.'
+    - strand: orientation of the walk relative to the genome
+    - frame: '.'
+    - attribute: block_nr (in form 'ID=block_nr')
+    Name of the .gff file consists of graph.name, today's date and the sorting seed mode.
+    
+    Example line
+    3	final_project	.	212	283	.	+	.	ID=1
+    '''
+    gff_cols = ['seqname', 'source', 'feature', 'start', 
+                'end', 'score', 'strand', 'frame', 'attribute']
+    walk_starts = []
+    walk_ends = []
+    for walk in block.collinear_walks:
+        g_idx = walk.genome
+        genome_path = graph.genomes[g_idx].path
+        walk_starts.append(genome_path[walk.start].p_length-1)
+        walk_ends.append(genome_path[walk.end].p_length-1)
+        assert walk_starts[-1]>=0 and walk_ends[-1]>=0, f'{walk_starts[-1]=}, {walk_ends[-1]=}'
+    df = pd.DataFrame.from_records(block.collinear_walks, columns=CollinearWalk._fields)
+    if len(df)!=len(df.drop_duplicates()):
+        print(f'{len(df)=} != {len(df.drop_duplicates())=}')
+        df.drop_duplicates(inplace=True) # <--- TO FIX
+    df['attribute'] = f'ID={block_nr}'
+    df['start'] = walk_starts
+    df['end'] = walk_ends
+    df['orient'] = np.where(df['orient']>0, '+', '-')
+    df.rename(columns={'genome':'seqname', 'orient':'strand'}, inplace=True)
+    
+    df['source'] = 'final_project'
+    df['feature'] = '.'
+    df['score'] = '.'
+    df['frame'] = '.'
+    df = df[gff_cols]
+
+    name = get_file_name(graph.name, SORT_SEEDS, 'gff')
+    if block_nr==0:
+        df.to_csv(f'blocks/{name}', index=False, mode='w')
+    else:
+        df.to_csv(f'blocks/{name}', index=False, mode='a', header=False)
+    return df[['start', 'end', 'strand']]
