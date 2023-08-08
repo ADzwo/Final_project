@@ -89,9 +89,6 @@ def remove_short_walks(block, graph, PARAM_m):
         if walk_length(block.collinear_walks[w_idx], graph)<PARAM_m:
             block.collinear_walks.pop(w_idx)
             block.match_carrying.pop(w_idx)
-            # block.scores.pop(w_idx)
-    for walk in block.collinear_walks:
-        assert walk_length(walk, graph)>=PARAM_m
 
 def scoring_function(block, graph, PARAM_m, PARAM_b):
     '''
@@ -199,8 +196,11 @@ def save_block_to_gff(block, graph, SORT_SEEDS, block_nr):
     for walk in block.collinear_walks:
         g_idx = walk.genome
         genome_path = graph.genomes[g_idx].path
-        walk_starts.append(genome_path[walk.start].p_length-1)
-        walk_ends.append(genome_path[walk.end].p_length-1)
+        if walk.start==0:
+            walk_starts.append(0)
+        else:
+            walk_starts.append(genome_path[walk.start-1].p_length)
+        walk_ends.append(genome_path[walk.end].p_length)
         assert walk_starts[-1]>=0 and walk_ends[-1]>=0, f'{walk_starts[-1]=}, {walk_ends[-1]=}'
     df = pd.DataFrame.from_records(block.collinear_walks, columns=CollinearWalk._fields)
     if len(df)!=len(df.drop_duplicates()):

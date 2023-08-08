@@ -3,7 +3,6 @@ from tuples import *
 from block import CollinearBlock, BlockExtensions
 from block_tools import mark_vertices_as_used, scoring_function, remove_short_walks#, save_block_to_gff, save_maf
 
-
 def find_collinear_block(graph, v_idx, PARAM_a, PARAM_b, PARAM_m):
     collinear_seeds, carrying_seed_orientation = graph.find_seeds(v_idx, PARAM_a=PARAM_a)
     if not collinear_seeds:
@@ -92,6 +91,7 @@ def merge_forward_backward_blocks(block_dict, nr_seeds):
         # merge carrying paths and their orientations
         final_block.carrying_path = list(reversed(carrying_b))[:-1] + forward_block.carrying_path
         final_block.carrying_path_orientations = [-o for o in reversed(carrying_orient_b)][:-1] + forward_block.carrying_path_orientations
+        final_block.scores = []
     return final_block
 
 def merge_blocks_and_postprocess(block_dict, graph, nr_seeds, PARAM_m):
