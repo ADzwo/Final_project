@@ -170,7 +170,7 @@ def save_blocks_to_gff(blocks:list, graph, SORT_SEEDS):
     df_all.to_csv(f'blocks/{name}', index=False)
     return [df[['start', 'end', 'strand']] for df in df_list]
 
-def save_block_to_gff(block, graph, SORT_SEEDS, block_nr):
+def save_block_to_gff(block, graph, block_nr, file_name):
     '''
     Function saves a collinear block in a .gff file.
     The block is appended to an existing .csv file
@@ -218,9 +218,8 @@ def save_block_to_gff(block, graph, SORT_SEEDS, block_nr):
     df['frame'] = '.'
     df = df[gff_cols]
 
-    name = get_file_name(graph.name, SORT_SEEDS, 'gff')
     if block_nr==0:
-        df.to_csv(f'blocks/{name}', index=False, mode='w')
+        df.to_csv(f'blocks/{file_name}', index=False, mode='w')
     else:
-        df.to_csv(f'blocks/{name}', index=False, mode='a', header=False)
+        df.to_csv(f'blocks/{file_name}', index=False, mode='a', header=False)
     return df[['start', 'end', 'strand']]

@@ -43,21 +43,22 @@ def save_maf(alignment, maf_file, block_df, genome_lengths, walks, genome_idx_to
 
 def wga(graph_file_path, SORT_SEEDS, align, _match, _mismatch, _gap, a, b, m):
     var_graph = Graph(graph_file_path)
-    name = get_file_name(var_graph.name, SORT_SEEDS, 'maf')
-    maf_file = open(f'{maf_path}{name}', 'w')
-    print(f'maf_file = {maf_path}{name}')
+    maf_file_name = get_file_name(var_graph.name, SORT_SEEDS, 'maf')
+    maf_file = open(f'{maf_path}{maf_file_name}', 'w')
+    print(f'maf_file = {maf_path}{maf_file_name}')
     maf_file.write('##maf version=1 scoring=tba.v8\n\n')
     vertex_indices_order = sort_v_idx(var_graph, SORT_SEEDS)
     block_nr = 0
     with open(f'vertex_sequences/{var_graph.name}.txt') as f:
         sequences = f.readlines()
     with open(f'genome_idx_to_name/{var_graph.name}.json', 'r') as f:
-            genome_idx_to_name = json.load(f)
+        genome_idx_to_name = json.load(f)
+    block_file_name = get_file_name(var_graph.name, SORT_SEEDS, 'gff')
     for v_idx in vertex_indices_order: # select a vertex --- seed of a new CollinearBlock
         block = find_collinear_block(var_graph, v_idx, PARAM_a=a, PARAM_b=b, PARAM_m=m)
         if block is not None: # save block and its alignment
             block_nr += 1
-            block_df = save_block_to_gff(block, graph=var_graph, SORT_SEEDS=SORT_SEEDS, block_nr=block_nr)
+            block_df = save_block_to_gff(block, graph=var_graph, block_nr=block_nr, file_name=block_file_name)
             if align==True:
                 print(f'\n ------------ ALIGN BLOCK NR {block_nr} ------------')
                 alignment = poa_align(block, var_graph, sequences, _match=_match, _mismatch=_mismatch, _gap=_gap)
