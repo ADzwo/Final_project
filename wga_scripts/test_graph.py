@@ -1,7 +1,6 @@
 import unittest
 import os, sys
 from tuples import *
-from config import *
 from graph import *
 
 os.chdir(sys.path[0])
@@ -24,7 +23,7 @@ class TestGraph(unittest.TestCase):
         self.graph1 = Graph(data_path+'test_data1.gfa')
         self.graph2 = Graph(data_path+'test_data2.gfa')
         self.vertex_dict_path = f'{src}/vertex_name_to_idx/'
-        self.genome_dict_path = f'{src}/genome_name_to_idx/'
+        self.genome_dict_path = f'{src}/genome_idx_to_name/'
         self.vertex_seq_path = f'{src}/vertex_sequences/'
     
     def tearDown(self):
@@ -96,12 +95,12 @@ class TestGraph(unittest.TestCase):
                                 Got {len(sequences)=}, {len(graph.vertices)=}')
 
     def test_find_seeds(self):
-        collinear_seeds, carrying_seed_orientation = self.graph1.find_seeds(4)
+        collinear_seeds, carrying_seed_orientation = self.graph1.find_seeds(4, PARAM_a=300)
         self.assertEqual(len(collinear_seeds), 2)
         self.assertEqual(collinear_seeds, [CollinearWalk(0, 4, 4, 1), CollinearWalk(2, 3, 3, -1)])
         self.assertEqual(carrying_seed_orientation, 1)
 
-        collinear_seeds, carrying_seed_orientation = self.graph2.find_seeds(1)
+        collinear_seeds, carrying_seed_orientation = self.graph2.find_seeds(1, PARAM_a=300)
         self.assertEqual(len(collinear_seeds), 1)
         self.assertEqual(collinear_seeds, [CollinearWalk(1, 1, 1, 1)])
         self.assertEqual(carrying_seed_orientation, -1)

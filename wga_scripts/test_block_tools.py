@@ -1,20 +1,18 @@
 import unittest
-from unittest.mock import patch
-import os, sys, math
+import os, sys, math, json
 from collections import namedtuple
 import pandas as pd
 from datetime import date
 from tuples import *
-from config import *
-from block_tools import walk_length, find_vertex_on_path_till_b, mark_vertices_as_used, remove_short_walks, scoring_function, save_blocks_to_gff
+from block_tools import *
 from graph import Graph
 
 os.chdir(sys.path[0])
 os.chdir('../')
-src = os.getcwd()
+src = os.getcwd() + '/'
 print(f'{src=}')
 assert 'test_data' in os.listdir()
-data_path = src+'/test_data/'
+data_path = src+'test_data/'
 
 today = str(date.today()).replace('-', '_')
 
@@ -23,7 +21,7 @@ class TestGraph(unittest.TestCase):
         self.graph1 = Graph(data_path+'test_data1.gfa')
         self.graph2 = Graph(data_path+'test_data2.gfa')
         self.vertex_dict_path = f'{src}/vertex_name_to_idx/'
-        self.genome_dict_path = f'{src}/genome_name_to_idx/'
+        self.genome_dict_path = f'{src}/genome_idx_to_name/'
         self.vertex_seq_path = f'{src}/vertex_sequences/'
     
     def tearDown(self):
@@ -34,6 +32,17 @@ class TestGraph(unittest.TestCase):
             os.remove(f'{self.genome_dict_path}/{graph.name}.json')
             assert os.path.exists(f'{self.vertex_seq_path}/{graph.name}.txt')
             os.remove(f'{self.vertex_seq_path}/{graph.name}.txt')
+
+    def test_sort_v_idx(self):
+        vertices_sorted = sort_v_idx(graph=self.graph1, SORT_SEEDS='nr_occurrences')
+        self.assertEqual(vertices_sorted[0], 0)
+        
+        vertices_sorted = sort_v_idx(graph=self.graph2, SORT_SEEDS='length')
+        self.assertEqual(vertices_sorted[0], 0)
+        self.assertEqual(vertices_sorted[-1], 2) # vertex with name '4' has idx 2 (checked below)
+        with open(f'{self.vertex_dict_path}/{self.graph2.name}.json', 'r') as f:
+            vertex_dict = json.load(f)
+        self.assertEqual(vertex_dict['4'], 2)
 
     def test_walk_length(self):
         # one element walk
@@ -147,8 +156,6 @@ class TestGraph(unittest.TestCase):
         score = scoring_function(block, self.graph1, PARAM_b=200, PARAM_m=50)
         self.assertEqual(score, 0)
         
-    # @patch.object(block_tools, 'PARAM_m', 5)
-    # @patch.object(block_tools, 'PARAM_b', 10)
     def test_scoring_function_small_params(self):
         MockBlock = namedtuple('MockBlock',
                                ['collinear_walks', 'match_carrying', 'scores'])
@@ -185,9 +192,14 @@ class TestSave(unittest.TestCase):
         self.graph1 = Graph(data_path+'test_data1.gfa')
         self.graph2 = Graph(data_path+'test_data2.gfa')
         self.vertex_dict_path = f'{src}/vertex_name_to_idx/'
-        self.genome_dict_path = f'{src}/genome_name_to_idx/'
+        self.genome_dict_path = f'{src}/genome_idx_to_name/'
         self.vertex_seq_path = f'{src}/vertex_sequences/'
         self.blocks_path = f'{src}/blocks/'
+
+        MockBlock = namedtuple('MockBlock', ['collinear_walks'])
+        self.empty_block = MockBlock([])
+        self.block1 = MockBlock([CollinearWalk(0, 0, 0, -1), CollinearWalk(1, 0, 1, 1)])
+
     
     def tearDown(self):
         for graph in [self.graph1, self.graph2]:
@@ -206,29 +218,57 @@ class TestSave(unittest.TestCase):
                     if file.endswith('ences.gff'):
                         os.remove(f'{self.blocks_path}/{graph.name}_{today}_sort_by_nr_occurrences.gff')
 
-    def test_save_blocks_to_gff(self):
-        MockBlock = namedtuple('MockBlock', ['collinear_walks'])
-
-        empty_block = MockBlock([])
-        block1 = MockBlock([CollinearWalk(0, 0, 0, -1), CollinearWalk(1, 0, 1, 1)])
-
+    def test_save_block_to_gff(self):
         for sort_seeds, suffix in [('no', ''), ('nr_occurrences', '_sort_by_nr_occurrences'), ('length', '_sort_by_length')]:
-            save_blocks_to_gff([empty_block], graph=self.graph2, SORT_SEEDS=sort_seeds)
-            blocks_df = pd.read_csv(f'{self.blocks_path}/{self.graph2.name}_{today}{suffix}.gff', sep=',')
-            self.assertEqual(len(blocks_df), 0)
+            file_name = get_file_name(self.graph2.name, SORT_SEEDS=sort_seeds, extension='gff')
+            with open(src+'blocks/'+file_name, 'w') as file:
+                save_block_to_gff(self.empty_block, graph=self.graph2, block_nr=0, file=file)
+            block_df = pd.read_csv(f'{self.blocks_path}{self.graph2.name}_{today}{suffix}.gff', sep=',')
+            self.assertEqual(len(block_df), 0)
 
-            save_blocks_to_gff([block1], graph=self.graph1, SORT_SEEDS=sort_seeds)
-            blocks_df = pd.read_csv(f'{self.blocks_path}/{self.graph1.name}_{today}{suffix}.gff', sep=',')
-            self.assertEqual(len(blocks_df), 2)
-            self.assertTrue(blocks_df['seqname'].tolist(), ['0', '1'])
-            self.assertTrue(blocks_df['source'].unique(), ['final_project'])
-            self.assertTrue(blocks_df['feature'].unique(), ['.'])
-            self.assertTrue(blocks_df['frame'].unique(), ['.'])
-            self.assertTrue(blocks_df['score'].unique(), ['.'])
-            self.assertTrue(blocks_df['attribute'].unique(), ['ID=0'])
-            self.assertTrue(blocks_df['strand'].tolist(), ['-', '+'])
-            self.assertTrue(blocks_df['start'].tolist(), ['0', '0'])
-            self.assertTrue(blocks_df['end'].tolist(), ['32', '4'])
+            file_name = get_file_name(self.graph1.name, SORT_SEEDS=sort_seeds, extension='gff')
+            with open(src+'blocks/'+file_name, 'w') as file:
+                save_block_to_gff(self.block1, graph=self.graph1, block_nr=0, file=file)
+            block_df = pd.read_csv(f'{self.blocks_path}{self.graph1.name}_{today}{suffix}.gff', sep=',')
+            self.assertEqual(len(block_df), 2)
+            self.assertTrue(block_df['seqname'].tolist(), ['0', '1'])
+            self.assertTrue(block_df['source'].unique(), ['final_project'])
+            self.assertTrue(block_df['feature'].unique(), ['.'])
+            self.assertTrue(block_df['frame'].unique(), ['.'])
+            self.assertTrue(block_df['score'].unique(), ['.'])
+            self.assertTrue(block_df['attribute'].unique(), ['ID=0'])
+            self.assertTrue(block_df['strand'].tolist(), ['-', '+'])
+            self.assertTrue(block_df['start'].tolist(), ['0', '0'])
+            self.assertTrue(block_df['end'].tolist(), ['32', '4'])
+
+    def test_save_maf(self):
+        alignment = [(-1, -1), (0, 0), (1, 1)]
+        maf_file = open('tmp.maf', 'w')
+
+        block_file_name = get_file_name(self.graph1.name, SORT_SEEDS='no', extension='gff')
+        block_file = open(src+'blocks/'+block_file_name, 'w')
+
+        block_df = save_block_to_gff(self.block1, graph=self.graph1, block_nr=0, file=block_file)
+        with open(f'{self.genome_dict_path}/{self.graph1.name}.json', 'r') as f:
+            genome_idx_to_name = json.load(f)
+        save_maf(alignment, maf_file, block_df, self.graph1.genome_lengths, self.block1.collinear_walks, genome_idx_to_name)
+        maf_file.close()
+        os.remove('tmp.maf')
+
+class TestGetFileName:
+
+    def test_get_file_name(self):
+        name = get_file_name('', SORT_SEEDS='no', extension='a')
+        self.assertEqual(name, f'_{today}.a')
+        name = get_file_name('graph_name', SORT_SEEDS='no', extension='a')
+        self.assertEqual(name, f'graph_name_{today}.a')
+
+        name = get_file_name('', SORT_SEEDS='length', extension='a')
+        self.assertEqual(name, f'_{today}_sort_by_length.a')
+
+        name = get_file_name('', SORT_SEEDS='nr_occurrences', extension='a')
+        self.assertEqual(name, f'_{today}_sort_by_nr_occurrences.a')
+        
 
 if __name__=='__main__':
     unittest.main()

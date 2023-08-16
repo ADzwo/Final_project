@@ -2,7 +2,6 @@ import os
 import sys
 import argparse
 import json
-import pandas as pd
 from tuples import *
 from graph import Graph
 from block_tools import get_file_name, sort_v_idx, save_block_to_gff, save_maf
@@ -51,6 +50,7 @@ def wga(graph_file_path, SORT_SEEDS, align, _match, _mismatch, _gap, a, b, m):
                 alignment = poa_align(block, var_graph, sequences, _match=_match, _mismatch=_mismatch, _gap=_gap)
                 save_maf(alignment, maf_file, block_df, var_graph.genome_lengths, block.collinear_walks, genome_idx_to_name)
     maf_file.close()
+    block_file.close()
     print(f'Found {block_nr} blocks for graph {graph_file_path}.')
 
 
@@ -84,6 +84,9 @@ if __name__=='__main__':
     if args.align==True:
         if not os.path.exists(maf_path):
             os.mkdir(maf_path)
+    
+    if args.s not in {'no', 'length', 'nr_occurrences'}:
+        raise ValueError("Argument -s must be one of 'no' (default), 'length', 'nr_occurrences'.")
     wga(args.i, args.s, args.align, args.match, args.mismatch, args.gap, 
         a=int(args.a), b=int(args.b), m=int(args.m))
 

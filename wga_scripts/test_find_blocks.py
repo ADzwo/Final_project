@@ -1,7 +1,6 @@
 import unittest
 from unittest.mock import patch
 import os, sys
-from config import *
 from tuples import *
 import block
 from block import CollinearBlock, BlockExtensions
@@ -92,7 +91,7 @@ class TestFunctionsGraph(unittest.TestCase):
     def setUp(self):
         self.graph1 = Graph(data_path+'test_data1.gfa')
         self.vertex_dict_path = f'{src}/vertex_name_to_idx/'
-        self.genome_dict_path = f'{src}/genome_name_to_idx/'
+        self.genome_dict_path = f'{src}/genome_idx_to_name/'
         self.vertex_seq_path = f'{src}/vertex_sequences/'
         
         self.block1 = CollinearBlock(seed_idx=1, 
@@ -135,10 +134,10 @@ class TestFunctionsGraph(unittest.TestCase):
         os.remove(f'{self.vertex_seq_path}/{name}.txt')
 
     def test_find_collinear_blocks(self):
-        final_blocks = find_collinear_blocks(self.graph1)
-        for final_block in final_blocks:
-            check_block(self.graph1, final_block)
-        
+        for v_idx in range(len(self.graph1.vertices)):
+            final_block = find_collinear_block(self.graph1, v_idx=v_idx, PARAM_a=300, PARAM_b=300, PARAM_m=50)
+            if final_block is not None:
+                check_block(self.graph1, final_block)        
 
     def test_merge_forward_backward_blocks(self):
         nr_seeds = 3
@@ -163,57 +162,52 @@ class TestFunctionsGraph(unittest.TestCase):
 
     def test_merge_blocks_and_postprocess(self):
         block_dict = {1:self.block1, -1:self.block2}
-        final_block = merge_blocks_and_postprocess(block_dict, self.graph1, 3)
+        final_block = merge_blocks_and_postprocess(block_dict, self.graph1, nr_seeds=3, PARAM_m=50)
         for matches in final_block.match_carrying:
             for i in range(len(matches)-1):
                 self.assertTrue(matches[i][0]<matches[i+1][0], 
                                 msg=f'Final match_carrying should have non-descending first elements.\
                                     Got {matches[i]=}, {matches[i+1]=} for {i=}.')
     
-    @patch.object(block, 'PARAM_b', 200)
-    @patch.object(block, 'PARAM_m', 50)
     def test_find_walk_to_extend(self):
         # no walk found
-        e = BlockExtensions(self.block1.collinear_walks, self.graph1, 9, 1)
+        e = BlockExtensions(self.block1.collinear_walks, self.graph1, 9, 1, PARAM_b=200)
         g_path = self.graph1.genomes[3].path
         walk_to_extend = find_walk_to_extend(self.block1, e, g_idx=3, g_path=g_path,
                                              o_nr_on_path=0, carrying_orient=-1)
         self.assertIsNone(walk_to_extend)
 
         # occurrence already in a walk
-        e = BlockExtensions(self.block1.collinear_walks, self.graph1, 9, 1)
+        e = BlockExtensions(self.block1.collinear_walks, self.graph1, 9, 1, PARAM_b=200)
         g_path = self.graph1.genomes[0].path
         walk_to_extend = find_walk_to_extend(self.block1, e, g_idx=0, g_path=g_path,
                                              o_nr_on_path=1, carrying_orient=1)
         self.assertEqual(walk_to_extend, -1)
 
         # one walk found
-        e = BlockExtensions(self.block2.collinear_walks, self.graph1, 2, -1)
+        e = BlockExtensions(self.block2.collinear_walks, self.graph1, 2, -1, PARAM_b=200)
         g_path = self.graph1.genomes[0].path
         walk_to_extend = find_walk_to_extend(self.block2, e, g_idx=0, g_path=g_path,
                                              o_nr_on_path=0, carrying_orient=-1)
         self.assertEqual(walk_to_extend, 0) # number of walk containing element nr 0 of genome 0
 
-    @patch.object(block, 'PARAM_b', 200)
-    @patch.object(block, 'PARAM_m', 50)
     def test_update_collinear_walks(self): # vertex_info - tuple(vertex index, orientation)
         self.block1.carrying_path_orientations[-1] = -1
-        e = BlockExtensions(self.block1.collinear_walks, self.graph1, 9, 1)
-        update_collinear_walks(self.block1, CarryingPathExtension(9, -1), e, self.graph1)
+        e = BlockExtensions(self.block1.collinear_walks, self.graph1, 9, 1, PARAM_b=200)
+        update_collinear_walks(self.block1, CarryingPathExtension(9, -1), e, 
+                               self.graph1, PARAM_b=200)
         self.assertIn(CollinearWalk(1, 0, 3, -1), self.block1.collinear_walks)
         self.assertIn([(3, 3), (3, 0)], self.block1.match_carrying)
         for walk, matches in zip(self.block1.collinear_walks, self.block1.match_carrying):
             match_carrying_check(walk, matches)
-        print(f'{self.block1.carrying_path=}')
-        print(f'{self.block1.carrying_path_orientations=}')
-        print(f'{self.block1.collinear_walks=}')
         check_block(self.graph1, self.block1)
 
-        e = BlockExtensions(self.block3.collinear_walks, self.graph1, 2, -1)
+        e = BlockExtensions(self.block3.collinear_walks, self.graph1, 2, -1, PARAM_b=200)
         # mark one occurrence of v_idx 5 as used (genome 2, position 0)
         g_path_pos = self.graph1.genomes[2].path[0]
         self.graph1.genomes[2].path[0] = Path(*(g_path_pos[:-2]), True, g_path_pos[-1])
-        update_collinear_walks(self.block3, CarryingPathExtension(5, 1), e, self.graph1)
+        update_collinear_walks(self.block3, CarryingPathExtension(5, 1), e, 
+                               self.graph1, PARAM_b=200)
         self.assertEqual(self.block3.collinear_walks, [CollinearWalk(0, 4, 5, 1)])
         self.assertEqual(self.block3.scores, [(0, 0)])
         for walk, matches in zip(self.block3.collinear_walks, self.block3.match_carrying):

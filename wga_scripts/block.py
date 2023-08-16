@@ -102,21 +102,14 @@ class BlockExtensions:
                         distance = walk_length(CollinearWalk(g_idx, min(w0_nr_on_path,i), max(w0_nr_on_path,i), 1), graph)
                         if v_oriented not in self.shortest_walk or self.shortest_walk[v_oriented].distance>distance:
                             self.shortest_walk[v_oriented] = PathFromW0(distance, walk_nr, w0_nr_on_path, i)
-                            # assert self.shortest_walk[v_oriented].w0_nr_on_path<g_len, f'{self.shortest_walk[v_oriented].w0_nr_on_path=}, {g_len=}'
-                            # assert self.shortest_walk[v_oriented].t_nr_on_path<g_len, f'{self.shortest_walk[v_oriented].t_nr_on_path=}, {g_len=}'
-                    
+                            
                     if p_length>=PARAM_b:
                         break
                     if i in {0, g_len-1}:
                         break
                     i += walk.orient # going forwards or backwards on the genome
             self.extensions[walk_nr] = CollinearWalk(g_idx, min(proximal, i), max(proximal, i), walk.orient)
-            # if walk.orient==1:
-            #     assert self.extensions[walk_nr].start==walk.end+1, f'{self.extensions[walk_nr]=}, {walk=}, {g_len=}'
-            # else:
-            #     assert self.extensions[walk_nr].end==walk.start-1, f'{self.extensions[walk_nr]=}, {walk=}, {g_len=}'
-            # walk_start_end_check(self.extensions[walk_nr], g_len)
-
+            
     
     def get_carrying_path_extension(self, graph, collinear_walks):
         '''

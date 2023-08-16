@@ -1,5 +1,4 @@
 import unittest
-from unittest.mock import patch
 import os, sys
 from tuples import *
 import block
@@ -101,7 +100,7 @@ class TestBlockExtensions(unittest.TestCase):
         self.walks1 = [CollinearWalk(0, 0, 0, 1), CollinearWalk(1, 2, 3, -1)]
         self.graph1 = Graph(data_path+'test_data1.gfa')
         self.vertex_dict_path = f'{src}/vertex_name_to_idx/'
-        self.genome_dict_path = f'{src}/genome_name_to_idx/'
+        self.genome_dict_path = f'{src}/genome_idx_to_name/'
         self.vertex_seq_path = f'{src}/vertex_sequences/'
 
     def tearDown(self):
@@ -112,10 +111,9 @@ class TestBlockExtensions(unittest.TestCase):
         assert os.path.exists(f'{self.vertex_seq_path}/{self.graph1.name}.txt')
         os.remove(f'{self.vertex_seq_path}/{self.graph1.name}.txt')
     
-    @patch.object(block, 'PARAM_m', 50)
-    @patch.object(block, 'PARAM_b', 200) #<---- TO FIX
     def test_init(self):
-        e = BlockExtensions(self.walks1, self.graph1, w0_idx=2, w0_orientation=1)
+        e = BlockExtensions(self.walks1, self.graph1, w0_idx=2, 
+                            w0_orientation=1, PARAM_b=200)
         self.assertEqual(e.extensions[0], CollinearWalk(0,1,8,1))
         self.assertEqual(e.extensions[1], CollinearWalk(1,0,1,-1))
         self.assertEqual(e.coverage[2], 1)
@@ -129,10 +127,9 @@ class TestBlockExtensions(unittest.TestCase):
             self.assertEqual(e.shortest_walk[t].w0_nr_on_path, 2)
             self.assertEqual(e.shortest_walk[t].t_nr_on_path, t)
     
-    @patch.object(block, 'PARAM_m', 50)
-    @patch.object(block, 'PARAM_b', 500) #<---- TO FIX
     def test_init_high_b(self):
-        e = BlockExtensions(self.walks1, self.graph1, w0_idx=2, w0_orientation=1)
+        e = BlockExtensions(self.walks1, self.graph1, w0_idx=2, 
+                            w0_orientation=1, PARAM_b=500)
         self.assertEqual(e.extensions[0], CollinearWalk(0,1,9,1))
         self.assertEqual(e.extensions[1], CollinearWalk(1,0,1,-1))
         self.assertEqual(e.coverage[2], 1)
@@ -146,26 +143,27 @@ class TestBlockExtensions(unittest.TestCase):
             self.assertEqual(e.shortest_walk[t].w0_nr_on_path, 2)
             self.assertEqual(e.shortest_walk[t].t_nr_on_path, t)
 
-    @patch.object(block, 'PARAM_m', 50)
-    @patch.object(block, 'PARAM_b', 500)
     def test_get_carrying_path_extension(self):
-        e = BlockExtensions(self.walks1, self.graph1, w0_idx=2, w0_orientation=1)
+        e = BlockExtensions(self.walks1, self.graph1, w0_idx=2, 
+                            w0_orientation=1, PARAM_b=500)
         r = e.get_carrying_path_extension(self.graph1, self.walks1)
         self.assertEqual(len(r), 7)
         self.assertEqual(r[-1].vertex, 9)
         self.assertEqual(r[0], CarryingPathExtension(3, 1))
 
-        e = BlockExtensions(self.walks1, self.graph1, w0_idx=1, w0_orientation=-1)
+        e = BlockExtensions(self.walks1, self.graph1, w0_idx=1, 
+                            w0_orientation=-1, PARAM_b=500)
         r = e.get_carrying_path_extension(self.graph1, self.walks1)
         self.assertEqual(len(r), 0)
     
 
     def test_update_extension(self):
-        e = BlockExtensions(self.walks1, self.graph1, w0_idx=2, w0_orientation=1)
+        e = BlockExtensions(self.walks1, self.graph1, w0_idx=2, 
+                            w0_orientation=1, PARAM_b=200)
         # walk orient == 1
         w_idx = 0
         walk = self.walks1[w_idx]
-        e.update_extension(walk, self.graph1, w_idx)
+        e.update_extension(walk, self.graph1, w_idx, PARAM_b=200)
         walk_start_end_check(e.extensions[w_idx], len(self.graph1.genomes[0].path))
         self.assertEqual(e.extensions[w_idx].start, walk.end+1,
                          msg=f'{e.extensions[w_idx]=}, {walk=}')
