@@ -118,7 +118,7 @@ def get_file_name(graph_name, SORT_SEEDS, extension):
     else:
         return f'{graph_name}_{today}.{extension}'
 
-def save_block_to_gff(block, graph, block_nr, file_name):
+def save_block_to_gff(block, graph, block_nr, file):
     '''
     Function saves a collinear block in a .gff file.
     The block is appended to an existing .csv file
@@ -165,8 +165,23 @@ def save_block_to_gff(block, graph, block_nr, file_name):
     df['frame'] = '.'
     df = df[gff_cols]
 
-    if block_nr==0:
-        df.to_csv(f'blocks/{file_name}', index=False, mode='w')
-    else:
-        df.to_csv(f'blocks/{file_name}', index=False, mode='a', header=False)
+    df.to_csv(file, index=False, mode='w')
     return df[['start', 'end', 'strand']]
+
+def save_maf(alignment, maf_file, block_df, genome_lengths, walks, genome_idx_to_name):
+    maf_file.write('a\n')
+    # The first line of the alignment represents the carrying path (we ommit it).
+    if len(block_df)+1!=len(alignment):
+        raise ValueError(f'Block size + 1 and alignment size should be equal.\
+                          Got {len(block_df)+1=}, {len(alignment)=}')
+
+    block_df['first'] = 's'
+    block_df[['label', 'alignstring']] = pd.DataFrame(alignment[1:])
+    block_df['label'] = block_df['label'].apply(lambda x: walks[x].genome)
+    block_df['size'] = block_df['end'] - block_df['start'] + 1
+    block_df['srcSize'] = block_df['label'].apply(lambda x: genome_lengths[x])
+    block_df['label'] = block_df['label'].apply(lambda x: genome_idx_to_name[str(x)])
+    block_df = block_df[['first', 'label', 'start', 'size', 'strand', 'srcSize', 'alignstring']]
+    
+    block_df.to_csv(maf_file, sep=' ', index=None, header=None)
+    maf_file.write('\n')
