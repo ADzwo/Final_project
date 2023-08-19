@@ -39,6 +39,8 @@ def wga(graph_file_path, SORT_SEEDS, align, _match, _mismatch, _gap, a, b, m):
     block_file_name = get_file_name(var_graph.name, SORT_SEEDS, 'gff')
     block_file = open(f'{block_path}{block_file_name}', 'w')
 
+    carrying_len = max(var_graph.genome_lengths.values())
+    carrying_len_so_far = 0
     for v_idx in vertex_indices_order: # select a vertex --- seed of a new CollinearBlock
         block = find_collinear_block(var_graph, v_idx, PARAM_a=a, PARAM_b=b, PARAM_m=m)
         if block is not None: # save block and its alignment
@@ -48,7 +50,7 @@ def wga(graph_file_path, SORT_SEEDS, align, _match, _mismatch, _gap, a, b, m):
             if align==True:
                 print(f'\tAligning.')
                 alignment = poa_align(block, var_graph, sequences, _match=_match, _mismatch=_mismatch, _gap=_gap)
-                save_maf(alignment, maf_file, block_df, var_graph.genome_lengths, block.collinear_walks, genome_idx_to_name)
+                carrying_len_so_far += save_maf(alignment, maf_file, block_df, var_graph.genome_lengths, block.collinear_walks, genome_idx_to_name, carrying_len, carrying_len_so_far)
     maf_file.close()
     block_file.close()
     print(f'Found {block_nr} blocks for graph {graph_file_path}.')

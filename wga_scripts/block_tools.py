@@ -168,9 +168,9 @@ def save_block_to_gff(block, graph, block_nr, file):
     df.to_csv(file, index=False, mode='w')
     return df[['start', 'end', 'strand']]
 
-def save_maf(alignment, maf_file, block_df, genome_lengths, walks, genome_idx_to_name):
+def save_maf(alignment, maf_file, block_df, genome_lengths, walks, genome_idx_to_name, carrying_len, carrying_len_so_far):
     maf_file.write('a\n')
-    # The first line of the alignment represents the carrying path (we ommit it).
+    # The first line of the alignment represents the carrying path (we add it later).
     if len(block_df)+1!=len(alignment):
         raise ValueError(f'Block size + 1 and alignment size should be equal.\
                           Got {len(block_df)+1=}, {len(alignment)=}')
@@ -183,5 +183,8 @@ def save_maf(alignment, maf_file, block_df, genome_lengths, walks, genome_idx_to
     block_df['label'] = block_df['label'].apply(lambda x: genome_idx_to_name[str(x)])
     block_df = block_df[['first', 'label', 'start', 'size', 'strand', 'srcSize', 'alignstring']]
     
+    # add carrying path
+    maf_file.write(f's {alignment[0][0]} {carrying_len_so_far} {len(alignment[0][1])+len(alignment[0][1])} + {carrying_len} {alignment[0][1]}')
     block_df.to_csv(maf_file, sep=' ', index=None, header=None)
     maf_file.write('\n')
+    return len(alignment[0][1])
