@@ -1,6 +1,6 @@
 *.gfa
 *.gff
-*.maf
+*.maf*
 *.csv
 *.json
 *.txt
