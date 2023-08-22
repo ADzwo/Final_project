@@ -68,7 +68,7 @@ class Graph:
                     genome_idx_to_name[len(self.genomes)] = g[1]
                     self.genomes.append(Genome(path))
         self.genome_lengths = [g.path[-1].p_length for g in self.genomes]
-        self.carrying_len = max(self.genome_lengths)
+        self.carrying_len = sum(self.genome_lengths)
         self.carrying_len_so_far = 0
         # save dictionaries to .json files
         with open(f'vertex_name_to_idx/{self.name}.json', 'w') as f:

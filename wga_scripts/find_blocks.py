@@ -14,11 +14,10 @@ def find_collinear_block(graph, v_idx, PARAM_a, PARAM_b, PARAM_m):
         new_block = CollinearBlock(v_idx, copy.copy(seeds), carrying_seed_orientation*forward_backward)
         new_score = 0
         while new_score>=0:
-            assert len(new_block.match_carrying) == len(new_block.collinear_walks)
             w0_idx = new_block.carrying_path[-1]
             w0_orientation = new_block.carrying_path_orientations[-1]
             Q = BlockExtensions(new_block.collinear_walks, graph, w0_idx, w0_orientation, PARAM_b=PARAM_b) # collinear_walks, graph, w0
-            r = Q.get_carrying_path_extension(graph, new_block.collinear_walks) # r - shortest walk from w0 to t (vertex, orientation), where t - index of the most frequently visited vertex;
+            r = Q.get_carrying_path_extension(graph, new_block.collinear_walks, new_block.carrying_path, new_block.carrying_path_orientations) # r - shortest walk from w0 to t (vertex, orientation), where t - index of the most frequently visited vertex;
             if not r:
                 break
             for wi in r:
@@ -35,7 +34,7 @@ def find_collinear_block(graph, v_idx, PARAM_a, PARAM_b, PARAM_m):
         if best_score>0:
             block_dict[forward_backward] = copy.copy(best_block)
     
-    if block_dict:
+    if len(block_dict)>0:
         final_block = merge_blocks_and_postprocess(block_dict, graph, len(collinear_seeds), PARAM_m=PARAM_m)
         return final_block
     else:
@@ -65,7 +64,6 @@ def merge_forward_backward_blocks(block_dict, nr_seeds):
         final_block = copy.copy(forward_block)
         final_block.match_carrying = []
         # Merge common walks
-        # TO FIX - merge walks which form a bubble near seeds
         for w_idx in range(nr_seeds):
             walk_f = forward_block.collinear_walks[w_idx]
             walk_b = backward_block.collinear_walks[w_idx]
@@ -108,7 +106,7 @@ def find_walk_to_extend(block, block_extensions, g_idx, g_path, o_nr_on_path, ca
         if extension.genome==g_idx:
             walk = block.collinear_walks[e_idx]
             if walk.start<=o_nr_on_path<=walk.end: # and walk.orient==carrying_orient*orient_on_extension:
-                return -1
+                continue # return -1
             if extension.start<=o_nr_on_path<=extension.end and extension.orient==carrying_orient*orient_on_extension:
                 if walk_to_extend is None:
                     walk_to_extend = e_idx
@@ -137,17 +135,13 @@ def update_collinear_walks(block, wi_info, block_extensions, graph, PARAM_b): # 
         walk_to_extend = find_walk_to_extend(block, block_extensions, g_idx, g_path, o_nr_on_path, wi_info.orientation)
         # 3a) If the path is found, extend it till w AND update the extension
         if walk_to_extend is not None:
-            if walk_to_extend==-1:
-                continue
+            # if walk_to_extend==-1:
+            #     continue
             walk = block.collinear_walks[walk_to_extend]
-            # assert g_path[walk.end].vertex in block.carrying_path
-            # assert g_path[walk.start].vertex in block.carrying_path
-            # assert g_path[o_nr_on_path].vertex in block.carrying_path
             if walk.orient==1:
                 block.collinear_walks[walk_to_extend] = CollinearWalk(walk.genome, walk.start, o_nr_on_path, walk.orient)
             else:
                 block.collinear_walks[walk_to_extend] = CollinearWalk(walk.genome, o_nr_on_path, walk.end, walk.orient)
-            # walk_start_end_check(block.collinear_walks[walk_to_extend], g_len)
             block_extensions.update_extension(block.collinear_walks[walk_to_extend], graph, walk_idx=walk_to_extend, PARAM_b=PARAM_b)
             old_score = block.scores[walk_to_extend]
             block.scores[walk_to_extend] = Score(old_score.q1, 0)
@@ -155,25 +149,19 @@ def update_collinear_walks(block, wi_info, block_extensions, graph, PARAM_b): # 
 
             # Update match_carrying
             block.match_carrying[walk_to_extend].append((len(block.carrying_path)-1, o_nr_on_path))
-            # match_carrying_check(block.collinear_walks[walk_to_extend], block.match_carrying[walk_to_extend])
-            # check_walk_orientations(graph, block)
-
+            
         # 3b) if such a walk is not found, occurrence becomes a new collinear path (provided it is not used)
         else:
             assert g_path[o_nr_on_path].vertex in block.carrying_path
             occurrence_orientation = g_path[o_nr_on_path].orientation
-            # orient = wi_orient_on_carrying_path * occurrence_orientation
             orient = wi_info.orientation * occurrence_orientation
             block.collinear_walks.append(CollinearWalk(g_idx, o_nr_on_path, o_nr_on_path, orient))
-            # walk_start_end_check(block.collinear_walks[-1], g_len)
             # Create extension for the new collinear walk
             block_extensions.update_extension(block.collinear_walks[-1], graph, walk_idx=len(block.collinear_walks)-1, PARAM_b=PARAM_b)
             block.scores.append(Score(block.carrying_path_length_so_far, 0))
             walks_updated_score.add(len(block.collinear_walks)-1)
             block.match_carrying.append([(len(block.carrying_path)-1, o_nr_on_path)])
-            # match_carrying_check(block.collinear_walks[-1], block.match_carrying[-1])
-            # check_walk_orientations(graph, block)
-
+            
     # Update scores
     for w_idx in range(len(block.collinear_walks)):
         if w_idx not in walks_updated_score:

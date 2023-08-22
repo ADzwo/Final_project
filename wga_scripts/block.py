@@ -62,8 +62,6 @@ class BlockExtensions:
                 to_search_from = walk.start
                 to_end_search = 0
             proximal = to_search_from + walk.orient # proximal - the end of extension proximal to the collinear walk
-            # assert 0<=proximal<g_len, f'0<=proximal<genome_length is not true! Got {proximal=}, {g_len=}.'
-            # assert 0<=to_search_from<g_len, f'0<=to_search_from<genome_length is not true! Got {to_search_from=}, {g_len=}.'
             
             if g_path[proximal].used==True:
                 break
@@ -102,6 +100,7 @@ class BlockExtensions:
                         distance = walk_length(CollinearWalk(g_idx, min(w0_nr_on_path,i), max(w0_nr_on_path,i), 1), graph)
                         if v_oriented not in self.shortest_walk or self.shortest_walk[v_oriented].distance>distance:
                             self.shortest_walk[v_oriented] = PathFromW0(distance, walk_nr, w0_nr_on_path, i)
+                            assert (i < walk.start and i < walk.end) or (i > walk.start and i > walk.end)
                             
                     if p_length>=PARAM_b:
                         break
@@ -111,7 +110,7 @@ class BlockExtensions:
             self.extensions[walk_nr] = CollinearWalk(g_idx, min(proximal, i), max(proximal, i), walk.orient)
             
     
-    def get_carrying_path_extension(self, graph, collinear_walks):
+    def get_carrying_path_extension(self, graph, collinear_walks, carrying_path=[], carrying_path_orientations=[]):
         '''
         Function finds 
          - index t of a vertex with field distance > 0 (reachable from w0) via a genomic walk, visited by the most extensions.
@@ -122,8 +121,13 @@ class BlockExtensions:
         w0_to_t = None
         for v_oriented in self.shortest_walk: # for all vertices reachable from w0 within distance PARAM_b
             if self.coverage[v_oriented]>highest_coverage: # if coverage is greater than the highest one by now
-                w0_to_t = self.shortest_walk[v_oriented]
-                highest_coverage = self.coverage[v_oriented]
+                v_idx = abs(v_oriented)
+                for i in range(len(carrying_path)):
+                    if v_idx==carrying_path[i] and v_oriented*carrying_path_orientations[i]>0:
+                        break
+                else:
+                    w0_to_t = self.shortest_walk[v_oriented]
+                    highest_coverage = self.coverage[v_oriented]
         if w0_to_t is None:
             return []
         
@@ -139,7 +143,7 @@ class BlockExtensions:
         g_idx = walk.genome
         genome = graph.genomes[g_idx]
         g_len = len(genome.path)
-        proximal = walk.end+1 if walk.orient==1 else walk.start-1
+        proximal = walk.end + walk.orient
         if proximal>=g_len or proximal<0 or genome.path[proximal].used==True:
             if walk_idx in self.extensions:
                 del self.extensions[walk_idx]
@@ -155,7 +159,7 @@ class BlockExtensions:
                 if ext_length>=PARAM_b:
                     break
                 distal += walk.orient
-                if distal<0 or distal>g_len-1:
+                if distal<0 or distal>=g_len:
                     distal -= walk.orient
                     break
             self.extensions[walk_idx] = CollinearWalk(g_idx, min(proximal,distal), max(proximal,distal), walk.orient)

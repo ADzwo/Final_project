@@ -152,7 +152,7 @@ def save_block_to_gff(block, graph, block_nr, file):
         assert walk_starts[-1]>=0 and walk_ends[-1]>=0, f'{walk_starts[-1]=}, {walk_ends[-1]=}'
     df = pd.DataFrame.from_records(block.collinear_walks, columns=CollinearWalk._fields)
     if len(df)!=len(df.drop_duplicates()):
-        raise ValueError(f'Dataframe of block {block_nr} contains duplicates!')
+        print(f'Dataframe of block {block_nr} contains duplicates!')
     df['attribute'] = f'ID={block_nr}'
     df['start'] = walk_starts
     df['end'] = walk_ends
@@ -165,6 +165,7 @@ def save_block_to_gff(block, graph, block_nr, file):
     df['frame'] = '.'
     df = df[gff_cols]
 
+    # df.drop_duplicates(inplace=True)
     df.to_csv(file, index=False, mode='w')
     return df[['start', 'end', 'strand']]
 
