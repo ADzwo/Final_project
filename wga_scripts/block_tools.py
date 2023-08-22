@@ -79,7 +79,7 @@ def mark_vertices_as_used(graph, block):
         genome_path = graph.genomes[g_idx].path
         for i in range(walk.start, walk.end+1):
             g_path_pos = genome_path[i]
-            genome_path[i] = Path(*(g_path_pos[:-2]), True, g_path_pos[-1])
+            graph.genomes[g_idx].path[i] = Path(*(g_path_pos[:-2]), True, g_path_pos[-1])
 
 def remove_short_walks(block, graph, PARAM_m):
     '''
@@ -165,7 +165,6 @@ def save_block_to_gff(block, graph, block_nr, file):
     df['frame'] = '.'
     df = df[gff_cols]
 
-    # df.drop_duplicates(inplace=True)
     df.to_csv(file, index=False, mode='w')
     return df[['start', 'end', 'strand']]
 
