@@ -49,10 +49,34 @@ class Graph:
         with open(f'vertex_sequences/{self.name}.txt', 'w') as f:
             f.writelines(sequences)
             del sequences
-        # find P lines and fill genome_name_to_idx dict 
+        # find P/W lines and fill genome_name_to_idx dict 
         with open(graph_file_path, 'r') as graph_file:
             for line in graph_file.readlines():
-                if line.startswith('P'): # or 'W'
+                if line.startswith('W'):
+                    g = line.strip().split() # W, sample_name, haplotype, sequence's name, 	start, end, vertices and orientations
+                    path = []
+                    p_length = 0
+                    v_pos = 0
+                    char_nr = 0
+                    while char_nr < len(g[-1]):
+                        assert g[-1][char_nr] in {'>', '<'}
+                        v_orientation = 1 if g[-1][char_nr]=='>' else -1
+                        char_nr += 1
+                        v_name = ''
+                        while char_nr < len(g[-1]) and g[-1][char_nr] not in {'>', '<'}:
+                            v_name += g[-1][char_nr]    
+                            char_nr += 1                        
+                        if v_name not in vertex_name_to_idx:
+                            raise ValueError(f'File {graph_file_path} contains undefined sequence {v_name} in a genome.')
+                        v_idx = vertex_name_to_idx[v_name]
+
+                        self.vertices[v_idx].add_occurrence(len(self.genomes), v_pos) # genome, nr_on_path
+                        v_pos += 1
+                        p_length += self.vertices[v_idx].v_length
+                        path.append(Path(v_idx, v_orientation, False, p_length))
+                    genome_idx_to_name[len(self.genomes)] = g[3]
+                    self.genomes.append(Genome(path))
+                if line.startswith('P'):
                     g = line.strip().split() # P, name, vertices' names, overlaps
                     path = [] # list[Path] - vertex, orientation, used
                     p_length = 0
@@ -78,7 +102,7 @@ class Graph:
           
     def add_vertex(self, line):
         v = line.strip().split()
-        if len(v)==3:
+        if len(v)>=3:
             v_name = v[1]
             self.vertices.append(Vertex(len(v[2])))
             v_sequence = v[2].upper()+'\n'
