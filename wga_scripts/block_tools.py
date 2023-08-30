@@ -183,7 +183,7 @@ def save_maf(alignment, maf_file, block_df, var_graph, walks, genome_idx_to_name
     block_df['label'] = block_df['label'].apply(lambda x: genome_idx_to_name[str(x)])
     block_df = block_df[['first', 'label', 'start', 'size', 'strand', 'srcSize', 'alignstring']]
     
-    # add carrying path
+    # add carrying path and save all to .maf
     maf_file.write(f's carrying {var_graph.carrying_len_so_far} {len(alignment[0][1])+len(alignment[0][1])} + {var_graph.carrying_len} {alignment[0][1]}\n')
     block_df.to_csv(maf_file, sep=' ', index=None, header=None)
     maf_file.write('\n')

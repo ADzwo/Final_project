@@ -121,13 +121,8 @@ class BlockExtensions:
         w0_to_t = None
         for v_oriented in self.shortest_walk: # for all vertices reachable from w0 within distance PARAM_b
             if self.coverage[v_oriented]>highest_coverage: # if coverage is greater than the highest one by now
-                v_idx = abs(v_oriented)
-                for i in range(len(carrying_path)):
-                    if v_idx==carrying_path[i] and v_oriented*carrying_path_orientations[i]>0:
-                        break
-                else:
-                    w0_to_t = self.shortest_walk[v_oriented]
-                    highest_coverage = self.coverage[v_oriented]
+                w0_to_t = self.shortest_walk[v_oriented]
+                highest_coverage = self.coverage[v_oriented]
         if w0_to_t is None:
             return []
         
