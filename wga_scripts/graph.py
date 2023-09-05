@@ -39,7 +39,7 @@ class Graph:
         self.name = re.split(r'[\/]', graph_file_path)[-1]
         self.name = re.split(r'\.', self.name)[0]
 
-        # line_path_type_gfa = None
+        line_path_type_gfa = None
         # find S lines and fill vertex_name_to_idx dict 
         with open(graph_file_path, 'r') as graph_file:
             for line in graph_file.readlines():

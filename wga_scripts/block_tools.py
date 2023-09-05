@@ -171,7 +171,7 @@ def save_block_to_gff(block, graph, block_nr, file):
 def save_maf(alignment, maf_file, block_df, var_graph, walks, genome_idx_to_name):
     maf_file.write('a\n')
     # The first line of the alignment represents the carrying path (we add it later).
-    if len(block_df)+1!=len(alignment):
+    if len(alignment) not in {len(block_df), len(block_df)+1}:
         raise ValueError(f'Block size + 1 and alignment size should be equal.\
                           Got {len(block_df)+1=}, {len(alignment)=}')
 
