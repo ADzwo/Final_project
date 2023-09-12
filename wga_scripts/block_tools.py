@@ -177,7 +177,7 @@ def save_maf(alignment, maf_file, block_df, var_graph, walks, genome_idx_to_name
 
     block_df['first'] = 's'
     block_df[['label', 'alignstring']] = pd.DataFrame(alignment[1:])
-    block_df['label'] = block_df['label'].apply(lambda x: walks[x].genome)
+    block_df['label'] = block_df['label'].apply(lambda x: walks[int(x)].genome)
     block_df['size'] = block_df['end'] - block_df['start'] + 1
     block_df['srcSize'] = block_df['label'].apply(lambda x: var_graph.genome_lengths[x])
     block_df['label'] = block_df['label'].apply(lambda x: genome_idx_to_name[str(x)])

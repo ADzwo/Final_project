@@ -72,7 +72,7 @@ def wga(graph_file_path, SORT_SEEDS, align, _match, _mismatch, _gap, a, b, m, al
                             f.write(f'>{w_idx}\n')
                             f.write(f'{walk_sequence(sequences, walk, var_graph)}\n')
                     with open(f'{src}/tmp_spoa_out_{SORT_SEEDS}.fasta', 'w') as out_file:
-                        spoa_process = subprocess.Popen(['/usr/bin/spoa', '-r', '1', f'{src}/tmp_spoa_{SORT_SEEDS}.fasta',
+                        spoa_process = subprocess.Popen(['/usr/bin/spoa', '-l', '1', '-r', '1', f'{src}/tmp_spoa_{SORT_SEEDS}.fasta',
                                                         '-m', str(_match), '-n', str(_mismatch), '-g', str(_gap), '-e', str(_gap)],
                                                         shell=False, stdout=out_file)
                     spoa_process.wait()
@@ -82,7 +82,7 @@ def wga(graph_file_path, SORT_SEEDS, align, _match, _mismatch, _gap, a, b, m, al
                         print(f'Error for {block_nr=}')
                         shutil.copyfile(f'{src}/tmp_spoa_{SORT_SEEDS}.fasta', f'{src}/tmp_spoa_{SORT_SEEDS}_{block_nr}.fasta')
                         continue
-                    alignment = []
+                    alignment = [(-1, '')]
                     for seq in SeqIO.parse(src+f'/tmp_spoa_out_{SORT_SEEDS}.fasta', 'fasta'):
                         alignment.append((int(seq.id), str(seq.seq)))
 
@@ -95,7 +95,7 @@ if __name__=='__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-i', required=True, help='Realative path to input .gfa file, from /Reading_graphs/ folder.')
     parser.add_argument('-a', default=150, required=False, 
-                        help='Aundance pruning parameter, default to 150.\
+                        help='Abundance pruning parameter, default to 150.\
                         Vertices occurring more than a times are not considered as collinear walk seeds.')
     parser.add_argument('-b', default=200, required=False, 
                         help='Maximal bubble size (for each walk), default to 200 residues.')
@@ -110,12 +110,12 @@ if __name__=='__main__':
     parser.add_argument('--no-align', dest='align', action='store_false',
                         help='Use not to align sequences within blocks. Tool aligns by default.')
     parser.set_defaults(align=True)
-    parser.add_argument('--match', default=2, required=False,
-                        help='Match score in alignment (used if --align is True). Default to 2.')
-    parser.add_argument('--mismatch', default=-2, required=False,
-                        help='Mismatch penalty in alignment (used if --align is True). Default to -2.')
-    parser.add_argument('--gap', default=-1, required=False,
-                        help='Gap penalty in alignment (used if --align is True). Default to -1.')
+    parser.add_argument('--match', default=5, required=False,
+                        help='Match score in alignment (used if --align is True). Default to 5.')
+    parser.add_argument('--mismatch', default=-4, required=False,
+                        help='Mismatch penalty in alignment (used if --align is True). Default to -4.')
+    parser.add_argument('--gap', default=-8, required=False,
+                        help='Gap penalty in alignment (used if --align is True). Default to -8.')
     parser.add_argument('--align_mode', default='poapy', required=False,
                         help="Alignment mode --- 'poapy' or 'spoa'. Default to 'poapy'.")
     args = parser.parse_args()
