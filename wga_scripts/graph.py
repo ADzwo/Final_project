@@ -18,6 +18,9 @@ class Vertex:
         self.occurrences = []
 
     def add_occurrence(self, g_idx, nr_on_path):
+        '''
+        Function adds an occurrence of a vertex to self.occurrences.
+        '''
         self.occurrences.append(occurrence(g_idx, nr_on_path))
 
 
@@ -30,6 +33,12 @@ class Graph:
     carrying_len_so_far: int
 
     def __init__(self, graph_file_path):
+        '''
+        Function constructs the graph based on a .gfa file (graph_file_path).
+        The dictionary translating indices of genomes to their names is saved to folder genome_idx_to_name/.
+        The dictionary translating names of vertices to their indices is saved to folder vertex_name_to_idx/.
+        The list of forward labels of the consecutive vertices is saved to folder vertex_sequences/.
+        '''
         self.vertices = []
         self.genomes = []
         vertex_name_to_idx = {} # dict to save {vertex id from gfa file: index in Graph.vertices}
@@ -122,6 +131,10 @@ class Graph:
             json.dump(genome_idx_to_name, f)
           
     def add_vertex(self, line):
+        '''
+        Function returns the name and forward label of a vertex
+        based on the 'S' line from a .gfa file.
+        '''
         v = line.strip().split()
         if len(v)>=3:
             v_name = v[1]

@@ -4,31 +4,40 @@ from block import CollinearBlock, BlockExtensions
 from block_tools import mark_vertices_as_used, scoring_function, remove_short_walks#, save_block_to_gff, save_maf
 
 def find_collinear_block(graph, v_idx, PARAM_a, PARAM_b, PARAM_m):
+    '''
+    Function finds a collinear block in graph, 
+    initialized with colliear walk seeds with index v_idx.
+    If a block is retrieved, it is returned. Otherwise, None is returned.
+    '''
+    # Find the seeds --- not used occurrences of vertex with index v_idx.
     collinear_seeds, carrying_seed_orientation = graph.find_seeds(v_idx, PARAM_a=PARAM_a)
     if not collinear_seeds:
         return None
-    block_dict = {}
+    block_dict = {} # forward and backward block in form {1: forward, -1: backward}
     for forward_backward, seeds in zip([1, -1], [collinear_seeds, [CollinearWalk(*s[:-1], -s.orient) for s in collinear_seeds]]):
+        # go in one direction
         best_score = 0
         best_block = None
         new_block = CollinearBlock(v_idx, copy.copy(seeds), carrying_seed_orientation*forward_backward)
         new_score = 0
-        while new_score>=0:
+        while new_score>=0: 
+            # 'large' step (find carrying path extension)
             w0_idx = new_block.carrying_path[-1]
             w0_orientation = new_block.carrying_path_orientations[-1]
             Q = BlockExtensions(new_block.collinear_walks, graph, w0_idx, w0_orientation, PARAM_b=PARAM_b) # collinear_walks, graph, w0
             r = Q.get_carrying_path_extension(graph, new_block.collinear_walks, new_block.carrying_path, new_block.carrying_path_orientations) # r - shortest walk from w0 to t (vertex, orientation), where t - index of the most frequently visited vertex;
             if not r:
                 break
-            for wi in r:
+            for wi in r: 
+                # 'small' step (take next vertex of the carrying path extension and extend collinear walks)
                 new_block.carrying_path.append(wi.vertex)
                 new_block.carrying_path_orientations.append(wi.orientation)
                 update_collinear_walks(new_block, wi, Q, graph, PARAM_b=PARAM_b)
                 new_score = scoring_function(new_block, graph, PARAM_b=PARAM_b, PARAM_m=PARAM_m)
                 new_block.carrying_path_length_so_far += graph.vertices[wi.vertex].v_length
                 if math.isinf(new_score):
-                    break
-                if new_score>best_score:
+                    break # stop
+                if new_score>best_score: # keep the best state of the block
                     best_block = copy.copy(new_block)
                     best_score = new_score
         if best_score>0:
@@ -41,6 +50,9 @@ def find_collinear_block(graph, v_idx, PARAM_a, PARAM_b, PARAM_m):
         return None
 
 def merge_match_carrying(len_carrying_b, matches_f=None, matches_b=None):
+    '''
+    Function merges match_carrying attributes of the forward and backward blocks.
+    '''
     if matches_b is None:
         final_matches = matches_f
     elif matches_f is None:
@@ -51,6 +63,12 @@ def merge_match_carrying(len_carrying_b, matches_f=None, matches_b=None):
     return [(m[0]+len_carrying_b-1, m[1]) for m in final_matches]
 
 def merge_forward_backward_blocks(block_dict, nr_seeds):
+    '''
+    Function merges the forward and backward block into one.
+    nr_seeds is the number of walks which initialized the block 
+    (the same for both blocks).
+    Function returns the merged block.
+    '''
     if len(block_dict)>=3:
         raise ValueError(f'Block dict should contain at most two blocks \
                          (forward and backward) Got {len(block_dict)=}.')
@@ -93,6 +111,16 @@ def merge_forward_backward_blocks(block_dict, nr_seeds):
     return final_block
 
 def merge_blocks_and_postprocess(block_dict, graph, nr_seeds, PARAM_m):
+    '''
+    Function merges the forward and backward blocks, marks their verties as used,
+    removes walks which are too short (shorter than PARAM_m)
+    and removes matches having the same first element 
+    (describing the position on carrying path).
+    Other arguments:
+    - graph --- the variation graph,
+    - nr_seeds --- the number of walks which initialized the block 
+      (the same for both blocks).
+    '''
     final_block = merge_forward_backward_blocks(block_dict, nr_seeds)
     mark_vertices_as_used(graph, final_block)
     remove_short_walks(final_block, graph, PARAM_m=PARAM_m)
@@ -100,13 +128,23 @@ def merge_blocks_and_postprocess(block_dict, graph, nr_seeds, PARAM_m):
     return final_block
 
 def find_walk_to_extend(block, block_extensions, g_idx, g_path, o_nr_on_path, carrying_orient):
+    '''
+    Function finds the collinear walk to be extended 
+    till the occurrence of vertex wi from genome g_idx, 
+    on position o_nr_on_path of its path (g_path).
+    If more then one walk is found, the one which ends further is selected.
+    Other arguments:
+    - block --- collinear block (Block),
+    - block_extensions --- extensions of block (BlockExtensions),
+    - carrying_orient --- the orientation of the vertex wi in the carrying path.
+    '''
     walk_to_extend = None
     orient_on_extension = g_path[o_nr_on_path].orientation
     for e_idx, extension in block_extensions.extensions.items():
         if extension.genome==g_idx:
             walk = block.collinear_walks[e_idx]
-            if walk.start<=o_nr_on_path<=walk.end: # and walk.orient==carrying_orient*orient_on_extension:
-                continue # return -1
+            if walk.start<=o_nr_on_path<=walk.end:
+                continue
             if extension.start<=o_nr_on_path<=extension.end and extension.orient==carrying_orient*orient_on_extension:
                 if walk_to_extend is None:
                     walk_to_extend = e_idx
@@ -122,6 +160,14 @@ def find_walk_to_extend(block, block_extensions, g_idx, g_path, o_nr_on_path, ca
     return walk_to_extend
 
 def update_collinear_walks(block, wi_info, block_extensions, graph, PARAM_b): # vertex_info - tuple(vertex index, orientation)
+    '''
+    Update collinear walks.
+    For each occurrence of wi (described by wi_info --- tuple of its index and orientation),
+    the function searches for a walk which can be extended till this occurrence.
+    If such a walk is found, it is extended till the occurrence of wi.
+    Otherwise, the occurrence of wi becomes a seed of a new collinear walk.
+    Scores of all walks are updated.
+    '''
     wi = graph.vertices[wi_info.vertex]
     walks_updated_score = set()
     for occurrence in wi.occurrences:

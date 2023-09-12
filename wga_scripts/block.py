@@ -26,7 +26,7 @@ class CollinearBlock:
     def remove_doubled_matches(self):
         '''
         Function removes from self.match_carrying the elements
-        having the same first elements.
+        having the same first elements (describing the position on carrying path).
         The first and last elements are not removed.
         So, if the 1st and 2nd elements have the same first element, 
         the 2nd one is removed.
