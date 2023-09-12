@@ -1,10 +1,13 @@
+A whole-genome aligner, based on the algorithm of SibeliaZ-LCB, but operating on a variation graph instead of a compacted de Bruijn graph.
+
+
 The project can be used with the following command.
 ```
 <path_to_wga> -i <path_to_input>
 ```
 where the path_to_wga is the path to script wga_scripts/calculate_wga.py 
 and path_to_input is the relative path to the input .gfa file from the source directory of the project.
-The following not required flags can be used:
+The following not required flags can be used.
  - -a - Abundance pruning parameter, default to 150. Vertices occurring more than a times are not considered as collinear walk seeds.
  - -b - Maximal bubble size (for each walk), default to 200 residues.
  - -m - Minimal collinear walk length, default to 50.
