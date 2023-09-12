@@ -1,4 +1,4 @@
-*.gfa
+/blocks/*.gfa
 *.gff
 *.maf*
 *.csv

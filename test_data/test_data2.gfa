@@ -1,0 +1,8 @@
+H	VN:Z:1.0
+S	1	TACCCATGGCGATGAGGAGTACC
+S	2	CAT
+S	3	
+S	4	T
+S	5	GC
+P	alt1	1-,5-
+P	alt2	1+,2-,4+
