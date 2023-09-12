@@ -1,5 +1,7 @@
-A whole-genome aligner, based on the algorithm of SibeliaZ-LCB, but operating on a variation graph instead of a compacted de Bruijn graph.
+### Manual
 
+A whole-genome aligner, based on the algorithm of SibeliaZ-LCB, but operating on a variation graph instead of a compacted de Bruijn graph.
+We have provided two alternative ways of performing the MSA in each collinear block - one based on SPOA and another one using a modification of the library poapy.
 
 The project can be used with the following command.
 ```
@@ -26,3 +28,12 @@ After the code is ran, the following folders will be created in the source direc
  - maf --- contains .maf files with WGA,
  - genome_idx_to_name --- contains dictionaries translating indices of genomes in the variation graph to their names, 
  - vertex_name_to_idx --- contains dictionaries translating names of vertices to their indoces in the graph.
+
+References
+
+Minkin, I., Medvedev, P. Scalable multiple whole-genome alignment and locally collinear block construction with SibeliaZ.
+Nat Commun 11, 6327 (2020). https://doi.org/10.1038/s41467-020-19777-8
+
+https://github.com/ljdursi/poapy
+
+Vaser R, Sović I, Nagarajan N, Šikić M. Fast and accurate de novo genome assembly from long uncorrected reads. Genome Res. 2017 May;27(5):737-746. doi: 10.1101/gr.214270.116. Epub 2017 Jan 18. PMID: 28100585; PMCID: PMC5411768.
