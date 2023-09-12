@@ -2,7 +2,6 @@ import unittest
 from unittest.mock import patch
 import os, sys
 from tuples import *
-import block
 from block import CollinearBlock, BlockExtensions
 from graph import Graph
 from find_blocks import *
@@ -182,7 +181,7 @@ class TestFunctionsGraph(unittest.TestCase):
         g_path = self.graph1.genomes[0].path
         walk_to_extend = find_walk_to_extend(self.block1, e, g_idx=0, g_path=g_path,
                                              o_nr_on_path=1, carrying_orient=1)
-        self.assertEqual(walk_to_extend, -1)
+        self.assertIsNone(walk_to_extend)
 
         # one walk found
         e = BlockExtensions(self.block2.collinear_walks, self.graph1, 2, -1, PARAM_b=200)

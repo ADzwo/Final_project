@@ -186,6 +186,18 @@ class TestGraph(unittest.TestCase):
                           [None, None], [Score(0, 0), Score(0, 11)])
         score = scoring_function(block, self.graph1, PARAM_b=10, PARAM_m=5)
         self.assertTrue(math.isinf(score))
+
+    def test_walk_sequence(self):
+        with open(self.vertex_seq_path+'test_data1.txt', 'r') as f:
+            sequences = list(f.readlines())
+        
+        walk = CollinearWalk(0, 0, 0, 1)
+        seq = walk_sequence(sequences, walk, self.graph1)
+        self.assertEqual(seq, 'AGTACCCATGGCGATGAGGAGTACCCATGGCG')
+
+        walk = CollinearWalk(0, 0, 0, -1)
+        seq = walk_sequence(sequences, walk, self.graph1)
+        self.assertEqual(seq, 'CGCCATGGGTACTCCTCATCGCCATGGGTACT')
     
 class TestSave(unittest.TestCase):
     def setUp(self):
@@ -242,7 +254,7 @@ class TestSave(unittest.TestCase):
             self.assertTrue(block_df['end'].tolist(), ['32', '4'])
 
     def test_save_maf(self):
-        alignment = [(-1, -1), (0, 0), (1, 1)]
+        alignment = [(-1, 'AC'), (0, 'A-'), (1, 'AC')]
         maf_file = open('tmp.maf', 'w')
 
         block_file_name = get_file_name(self.graph1.name, SORT_SEEDS='no', extension='gff')
@@ -251,11 +263,11 @@ class TestSave(unittest.TestCase):
         block_df = save_block_to_gff(self.block1, graph=self.graph1, block_nr=0, file=block_file)
         with open(f'{self.genome_dict_path}/{self.graph1.name}.json', 'r') as f:
             genome_idx_to_name = json.load(f)
-        save_maf(alignment, maf_file, block_df, self.graph1.genome_lengths, self.block1.collinear_walks, genome_idx_to_name)
+        save_maf(alignment, maf_file, block_df, self.graph1, self.block1.collinear_walks, genome_idx_to_name)
         maf_file.close()
         os.remove('tmp.maf')
 
-class TestGetFileName:
+class TestGetFileName(unittest.TestCase):
 
     def test_get_file_name(self):
         name = get_file_name('', SORT_SEEDS='no', extension='a')
@@ -269,6 +281,36 @@ class TestGetFileName:
         name = get_file_name('', SORT_SEEDS='nr_occurrences', extension='a')
         self.assertEqual(name, f'_{today}_sort_by_nr_occurrences.a')
         
+
+    def test_reverse_complement(self):
+        self.assertEqual(reverse_complement('A'), 'T')
+        self.assertEqual(reverse_complement('T'), 'A')
+        self.assertEqual(reverse_complement('C'), 'G')
+        self.assertEqual(reverse_complement('G'), 'C')
+        
+        self.assertEqual(reverse_complement('ACTG'), 'CAGT')
+        self.assertEqual(reverse_complement(''), '')
+        
+        with self.assertRaises(ValueError):
+            reverse_complement('X')
+
+    def test_reverse_complement(self):
+        sequences = ['A', 'C', 'GT']
+
+        seq = read_sequence(sequences, v_idx=2, v_orientation=1)
+        self.assertEqual(seq, 'GT')
+        
+        seq = read_sequence(sequences, v_idx=2, v_orientation=-1)
+        self.assertEqual(seq, 'AC')
+        
+        seq = read_sequence(sequences, v_idx=2, v_orientation=1, walk_orient=1)
+        self.assertEqual(seq, 'GT')
+        
+        seq = read_sequence(sequences, v_idx=2, v_orientation=1, walk_orient=-1)
+        self.assertEqual(seq, 'AC')
+        
+        seq = read_sequence(sequences, v_idx=2, v_orientation=-1, walk_orient=-1)
+        self.assertEqual(seq, 'GT')
 
 if __name__=='__main__':
     unittest.main()
