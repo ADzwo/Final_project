@@ -1,5 +1,7 @@
-The project can be used with the following command:
+The project can be used with the following command.
+```
 <path_to_wga> -i <path_to_input>
+```
 where the path_to_wga is the path to script wga_scripts/calculate_wga.py 
 and path_to_input is the relative path to the input .gfa file from the source directory of the project.
 The following not required flags can be used:
