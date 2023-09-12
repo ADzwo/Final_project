@@ -188,3 +188,55 @@ def save_maf(alignment, maf_file, block_df, var_graph, walks, genome_idx_to_name
     block_df.to_csv(maf_file, sep=' ', index=None, header=None)
     maf_file.write('\n')
     var_graph.carrying_len_so_far += len(alignment[0][1])
+
+
+complement_dict = {'A':'T', 'C':'G', 'T':'A', 'G':'C'}
+
+def reverse_complement(seq):
+    '''
+    Function returns reverse complement to seq.
+    '''
+    seq_complement = ''
+    for s in seq[::-1]:
+        seq_complement += complement_dict[s]
+    return seq_complement
+
+def read_sequence(sequences, v_idx, v_orientation, walk_orient=None):
+    '''
+    Function returns a correct label of a vertex in a walk 
+    read in the orientation depicted by the carrying path.
+    Arguments:
+    - sequences --- list of forward labels of the consecutive vertices of the graph,
+    - v_idx --- index of the vertex,
+    - v_orientation --- orientation of the vertex in a walk (if -1, then the backward label is used),
+    - walk_orient --- orient of the walk (None for reading carrying path).
+    '''
+    if walk_orient is None:
+        orientation = v_orientation
+    else:
+        orientation = walk_orient*v_orientation
+    
+    if orientation==1:
+        seq = sequences[v_idx].strip()
+    else:
+        seq = reverse_complement(sequences[v_idx].strip())
+    return seq
+    
+def walk_sequence(sequences, walk, var_graph):
+    '''
+    Function returns the label of a collinear walk 
+    read in the orientation depicted by the carrying path.
+    Arguments:
+    - sequences --- list of forward labels of the consecutive vertices of the graph,
+    - walk --- collinear walk,
+    - var_graph --- variation graph.
+    '''
+    seq = ''
+    to_start = walk.start if walk.orient==1 else walk.end
+    to_end = walk.end+1 if walk.orient==1 else walk.start-1
+    g_path = var_graph.genomes[walk.genome].path
+    for i in range(to_start, to_end, walk.orient):
+        v_idx = g_path[i].vertex
+        v_orientation = g_path[i].orientation
+        seq += read_sequence(sequences, v_idx, v_orientation, walk.orient)
+    return seq

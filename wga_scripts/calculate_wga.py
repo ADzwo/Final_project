@@ -7,7 +7,7 @@ from Bio import SeqIO
 import json
 from tuples import *
 from graph import Graph
-from block_tools import get_file_name, sort_v_idx, save_block_to_gff, save_maf
+from block_tools import get_file_name, sort_v_idx, save_block_to_gff, save_maf, walk_sequence
 from find_blocks import find_collinear_block
 
 os.chdir(sys.path[0])
@@ -24,38 +24,22 @@ for folder in ['blocks', 'vertex_name_to_idx', 'genome_idx_to_name', 'vertex_seq
     if not os.path.exists(folder):
         os.mkdir(folder)
 
-complement_dict = {'A':'T', 'C':'G', 'T':'A', 'G':'C'}
-
-def reverse_complement(seq):
-    seq_complement = ''
-    for s in seq[::-1]:
-        seq_complement += complement_dict[s]
-    return seq_complement
-
-def read_sequence(sequences, v_idx, v_orientation, walk_orient=None):
-    if walk_orient is None:
-        orientation = v_orientation
-    else:
-        orientation = walk_orient*v_orientation
-    
-    if orientation==1:
-        seq = sequences[v_idx].strip()
-    else:
-        seq = reverse_complement(sequences[v_idx].strip())
-    return seq
-    
-def walk_sequence(sequences, walk, var_graph):
-    seq = ''
-    to_start = walk.start if walk.orient==1 else walk.end
-    to_end = walk.end+1 if walk.orient==1 else walk.start-1
-    g_path = var_graph.genomes[walk.genome].path
-    for i in range(to_start, to_end, walk.orient):
-        v_idx = g_path[i].vertex
-        v_orientation = g_path[i].orientation
-        seq += read_sequence(sequences, v_idx, v_orientation, walk.orient)
-    return seq
-
 def wga(graph_file_path, SORT_SEEDS, align, _match, _mismatch, _gap, a, b, m, align_mode):
+    '''
+    Function calculates WGA based on a variation graph from graph_file_path.
+    Block coordinates are saved to a .gff file in folder /blocks.
+    If align is True, the alignments are saved to a .maf file in folder /maf.
+    Both files contain today's date in format YYYY_MM_DD.
+    Other arguments:
+    - SORT_SEEDS --- seed sorting parameter ('no', 'length' or 'nr_occurrences'),
+    -  _match --- match score,
+    - _mismatch --- mismatch penalty,
+    - _gap - gap penalty,
+    - a --- abundance pruning parameter,
+    - b --- maximal bubble length,
+    - m --- minimal length of a collinear walk,
+    - align_mode --- alignment mode ('poapy' or 'spoa').
+    '''
     var_graph = Graph(graph_file_path)
     print('The variation graph has been read.')
     vertex_indices_order = sort_v_idx(var_graph, SORT_SEEDS)

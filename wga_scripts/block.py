@@ -24,6 +24,14 @@ class CollinearBlock:
 
     
     def remove_doubled_matches(self):
+        '''
+        Function removes from self.match_carrying the elements
+        having the same first elements.
+        The first and last elements are not removed.
+        So, if the 1st and 2nd elements have the same first element, 
+        the 2nd one is removed.
+        For other elements, the one with smaller index is removed.
+        '''
         for w_idx in range(len(self.collinear_walks)):
             matches = self.match_carrying[w_idx].copy()
             for i in range(len(matches)-1, 0, -1):
@@ -135,6 +143,11 @@ class BlockExtensions:
         return r
 
     def update_extension(self, walk, graph, walk_idx, PARAM_b):
+        '''
+        Function updates self.extensions[walk_idx] based on 
+        walk (collinear walk with index walk_idx), 
+        graph (variation graph) and PARAM_b (maximal bubble length).
+        '''
         g_idx = walk.genome
         genome = graph.genomes[g_idx]
         g_len = len(genome.path)
