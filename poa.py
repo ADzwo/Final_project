@@ -83,7 +83,7 @@ def add_to_alignment(old_alignment, new_alignment, seq_len_so_far):
     old_alignment[2] += new_alignment.nodeidxs
     return old_alignment
 
-def poa_align(block, var_graph, sequences, _match, _mismatch, _gap, html=True, globalAlign=True, simple=True):
+def poa_align(block, var_graph, sequences, _match, _mismatch, _gap, globalAlign=True, simple=True):
     carrying_to_poa, carrying_seq = carrying_to_poa_idx(block, sequences)
     graph = poagraph.POAGraph(carrying_seq, -1) # carrying path
     walks_to_poa = {}
