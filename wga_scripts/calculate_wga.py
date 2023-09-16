@@ -16,8 +16,8 @@ src = os.getcwd()
 maf_path = f'{src}/maf/' # folder to save the .maf files (WGA)
 block_path = f'{src}/blocks/' # folder to save the .gff files (block coordinates)
 
-assert os.path.exists(os.getcwd()+'/../poapy/'), 'Move to the root directory (the one containing README).'
-sys.path.append(os.getcwd()+'/../poapy/')
+assert os.path.exists(os.getcwd()+'/poapy/'), 'Move to the root directory (the one containing README).'
+sys.path.append(os.getcwd()+'/poapy/')
 from poa import poa_align
 
 for folder in ['blocks', 'vertex_name_to_idx', 'genome_idx_to_name', 'vertex_sequences']:
