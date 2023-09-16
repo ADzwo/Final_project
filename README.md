@@ -23,13 +23,17 @@ The following not required flags can be used.
  - --gap - Gap penalty in alignment (used if --align is True). Default to -8.
  - --align_mode - Alignment mode --- 'poapy' or 'spoa'. Default to 'poapy'.
 
+Align mode 'spoa' passes the sequences from a collinear block to SPOA (you need to have SPOA installed).
+Align mode 'poapy' uses a modification of library poapy.
+In this case, the PO-MSA is initialized with the carrying path of the block and the next sequences are aligned taking into consideration their common vertices with the carrying path in the variation graph.
+
 After the code is ran, the following folders will be created in the source directory:
  - blocks --- contains .gff files with block coordinates,
  - maf --- contains .maf files with WGA,
  - genome_idx_to_name --- contains dictionaries translating indices of genomes in the variation graph to their names, 
  - vertex_name_to_idx --- contains dictionaries translating names of vertices to their indoces in the graph.
 
-References
+### References
 
 Minkin, I., Medvedev, P. Scalable multiple whole-genome alignment and locally collinear block construction with SibeliaZ.
 Nat Commun 11, 6327 (2020). https://doi.org/10.1038/s41467-020-19777-8
